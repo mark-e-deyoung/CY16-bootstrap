@@ -17,6 +17,34 @@ static void pop(char *reg) {
   fprintf(output, "    mov %s, [r15++]\n", reg);
 }
 
+static bool is_param_obj(Obj *fn, Obj *var) {
+  for (Obj *param = fn->params; param; param = param->next) {
+    if (param == var)
+      return true;
+  }
+  return false;
+}
+
+static bool const_int_node(Node *node, long *value) {
+  while (node && node->kind == ND_CAST)
+    node = node->lhs;
+  if (!node || node->kind != ND_NUM)
+    return false;
+  *value = node->val;
+  return true;
+}
+
+static bool const_mul_node(Node *node, long *value) {
+  long lhs;
+  long rhs;
+  if (!node || node->kind != ND_MUL)
+    return false;
+  if (!const_int_node(node->lhs, &lhs) || !const_int_node(node->rhs, &rhs))
+    return false;
+  *value = lhs * rhs;
+  return true;
+}
+
 static void gen_addr(Node *node) {
   switch (node->kind) {
   case ND_VAR:
@@ -55,6 +83,18 @@ static void gen_expr(Node *node) {
     return;
   case ND_NUM:
     fprintf(output, "    mov r0, %ld\n", node->val);
+    push("r0");
+    return;
+  case ND_MEMZERO:
+    if (!node->var || !node->var->is_local || node->var->offset >= 0) {
+      error_tok(node->tok, "unsupported memzero target");
+    }
+    for (int i = 0; i < node->var->ty->size; i += 2) {
+      fprintf(output, "    mov r8, r14\n");
+      fprintf(output, "    sub r8, %d\n", -node->var->offset - i);
+      fprintf(output, "    mov [r8], 0\n");
+    }
+    fprintf(output, "    mov r0, 0\n");
     push("r0");
     return;
   case ND_NEG:
@@ -141,8 +181,48 @@ static void gen_expr(Node *node) {
   case ND_CAST:
     gen_expr(node->lhs);
     return;
+  case ND_COMMA:
+    gen_expr(node->lhs);
+    if (node->lhs->kind != ND_NULL_EXPR)
+      pop("r0");
+    gen_expr(node->rhs);
+    return;
+  case ND_NOT: {
+    int c = label_count++;
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_true_%d\n", c);
+    fprintf(output, "    mov r0, 0\n");
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_true_%d:\n", c);
+    fprintf(output, "    mov r0, 1\n");
+    fprintf(output, "L_done_%d:\n", c);
+    push("r0");
+    return;
+  }
+  case ND_BITNOT:
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    xor r0, 0xffff\n");
+    push("r0");
+    return;
+  case ND_COND: {
+    int c = label_count++;
+    gen_expr(node->cond);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_else_%d\n", c);
+    gen_expr(node->then);
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_else_%d:\n", c);
+    gen_expr(node->els);
+    fprintf(output, "L_done_%d:\n", c);
+    return;
+  }
   case ND_ADD:
   case ND_SUB:
+  case ND_MUL:
   case ND_BITAND:
   case ND_BITOR:
   case ND_BITXOR:
@@ -152,38 +232,49 @@ static void gen_expr(Node *node) {
   case ND_LE:
   case ND_EQ:
   case ND_NE:
+    if (node->kind == ND_MUL) {
+      long folded;
+      if (const_mul_node(node, &folded)) {
+        fprintf(output, "    mov r0, %ld\n", folded);
+        push("r0");
+        return;
+      }
+    }
+
     gen_expr(node->lhs);
     gen_expr(node->rhs);
     pop("r1");
     pop("r0");
     
     if (node->kind == ND_ADD) {
-      if (node->ty->base) {
-         int sz = node->ty->base->size;
-         if (sz == 2) {
-             fprintf(output, "    shl r1, 1\n");
-         } else if (sz == 4) {
-             fprintf(output, "    shl r1, 2\n");
-         } else if (sz > 1) {
-             for (int i = 1; i < sz; i++) {
-                 fprintf(output, "    add [--r15], r0\n");
-                 fprintf(output, "    add r0, r1\n");
-                 fprintf(output, "    mov r1, r0\n");
-                 fprintf(output, "    mov r0, [r15++]\n");
-             }
-         }
-      }
       fprintf(output, "    add r0, r1\n");
     } else if (node->kind == ND_SUB) {
-      if (node->ty->base) {
-         int sz = node->ty->base->size;
-         if (sz == 2) {
-             fprintf(output, "    shl r1, 1\n");
-         } else if (sz == 4) {
-             fprintf(output, "    shl r1, 2\n");
-         }
-      }
       fprintf(output, "    sub r0, r1\n");
+    } else if (node->kind == ND_MUL) {
+      long n;
+      if (const_int_node(node->rhs, &n)) {
+        /* r0 already contains lhs. */
+      } else if (const_int_node(node->lhs, &n)) {
+        fprintf(output, "    mov r0, r1\n");
+      } else {
+        error_tok(node->tok, "dynamic MUL not supported");
+      }
+      if (n == 0) {
+        fprintf(output, "    mov r0, 0\n");
+      } else if (n == 1) {
+        /* r0 already contains lhs. */
+      } else if (n == 2) {
+        fprintf(output, "    shl r0, 1\n");
+      } else if (n == 4) {
+        fprintf(output, "    shl r0, 2\n");
+      } else if (n > 1 && n <= 16) {
+        fprintf(output, "    mov r2, r0\n");
+        for (long i = 1; i < n; i++) {
+          fprintf(output, "    add r0, r2\n");
+        }
+      } else {
+        error_tok(node->tok, "constant MUL out of CY16 v0 range");
+      }
     } else if (node->kind == ND_BITAND) {
       fprintf(output, "    and r0, r1\n");
     } else if (node->kind == ND_BITOR) {
@@ -211,6 +302,15 @@ static void gen_expr(Node *node) {
       fprintf(output, "    jmp L_done_%d\n", c);
       fprintf(output, "L_true_%d:\n", c);
       fprintf(output, "    mov r0, 1\n");
+      fprintf(output, "L_done_%d:\n", c);
+    } else if (node->kind == ND_LE) {
+      int c = label_count++;
+      fprintf(output, "    cmp r1, r0\n");
+      fprintf(output, "    jc L_false_%d\n", c);
+      fprintf(output, "    mov r0, 1\n");
+      fprintf(output, "    jmp L_done_%d\n", c);
+      fprintf(output, "L_false_%d:\n", c);
+      fprintf(output, "    mov r0, 0\n");
       fprintf(output, "L_done_%d:\n", c);
     } else if (node->kind == ND_EQ) {
       int c = label_count++;
@@ -269,10 +369,9 @@ static void gen_expr(Node *node) {
     push("r0");
     return;
   }
-  case ND_MUL:
   case ND_DIV:
   case ND_MOD:
-    error_tok(node->tok, "MUL/DIV/MOD not yet implemented for CY16");
+    error_tok(node->tok, "DIV/MOD not yet implemented for CY16");
     return;
   default:
     error_tok(node->tok, "invalid expression (kind %d)", node->kind);
@@ -295,7 +394,8 @@ static void gen_stmt(Node *node) {
   case ND_EXPR_STMT:
     if (node->lhs) {
       gen_expr(node->lhs);
-      pop("r0"); 
+      if (node->lhs->kind != ND_NULL_EXPR)
+        pop("r0"); 
     }
     return;
   case ND_IF: {
@@ -358,7 +458,8 @@ static void assign_lvar_offsets(Obj *prog) {
     
     int offset = 0;
     for (Obj *var = fn->locals; var; var = var->next) {
-      if (var->offset >= 0 && var->name && strlen(var->name) > 0) continue; 
+      if (is_param_obj(fn, var))
+        continue;
       offset += var->ty->size;
       offset = align_to(offset, var->ty->align);
       var->offset = -offset;
