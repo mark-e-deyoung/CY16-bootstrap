@@ -25,8 +25,12 @@ The focus shifts to completing **Phase 9 (v1 Compiler Features)** and initiating
 
 ### Google Jules (Delegated Refactoring/Feature Implementation)
 *   **Task A (Jules Session 1):** Implement Phase 9 features (`switch/case`, `static` locals, function pointers) in `src/cy16cc/cy16_codegen.c`.
+    *   **Status:** Active. Session ID: `7016060761375672113`.
+    *   **URL:** https://jules.google.com/session/7016060761375672113
     *   **Reasoning:** Heavy C/AST manipulation. Highly isolated to the compiler frontend/backend bridge.
 *   **Task B (Jules Session 2):** Implement Phase 10 GNUPro compatibility in `src/cy16boot/asm.py` and `src/cy16boot/dis.py`.
+    *   **Status:** Active. Session ID: `12822227189761318531`.
+    *   **URL:** https://jules.google.com/session/12822227189761318531
     *   **Reasoning:** Python string parsing and regex manipulation. Highly isolated to the assembler toolchain.
 
 ## 4. Task Relationships & Sequencing
