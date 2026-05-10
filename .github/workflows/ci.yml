@@ -1,0 +1,46 @@
+name: CY16 Validation Ladder
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        pip install pycparser
+        pip install -e .
+
+    - name: Run pytest
+      run: pytest -q
+
+    - name: Build Setup Stub
+      run: |
+        mkdir -p build
+        cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000 --lst build/setup_stub.lst --map build/setup_stub.map
+
+    - name: Disassemble Setup Stub
+      run: cy16-dis build/setup_stub.bin --base 0x1000
+
+    - name: Simulate Setup Stub
+      run: cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --dump 0xc03a
+
+    - name: Wrap Setup Stub into SCAN
+      run: cy16-scanwrap build/setup_stub.bin build/setup_stub.scan 0x1000
+
+    - name: Decode SCAN Image
+      run: cy16-scan-decode build/setup_stub.scan
