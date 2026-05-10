@@ -21,13 +21,12 @@ static void gen_addr(Node *node) {
   switch (node->kind) {
   case ND_VAR:
     if (node->var->is_local) {
-      // Map locals to offsets from r14 (frame pointer) if we support stack locals.
-      // For now, let's stick to the register-mapping for params but error on others.
-      if (node->var->offset < 32) { // R0-R3
-         error_tok(node->tok, "taking address of register-mapped local not supported");
+      if (node->var->offset >= 0) {
+        // Parameter in register
+        error_tok(node->tok, "taking address of register-mapped parameter not supported");
       }
       fprintf(output, "    mov r0, r14\n");
-      fprintf(output, "    sub r0, %d\n", node->var->offset);
+      fprintf(output, "    sub r0, %d\n", -node->var->offset);
       push("r0");
     } else {
       fprintf(output, "    mov r0, _%s\n", node->var->name);
@@ -65,13 +64,14 @@ static void gen_expr(Node *node) {
     return;
   case ND_VAR:
     if (node->var->is_local) {
-      int reg = node->var->offset / 8;
-      if (reg < 8) {
+      if (node->var->offset >= 0) {
+        // Param in r0-r7. offset is 0, 2, 4...
+        int reg = node->var->offset / 2;
         fprintf(output, "    mov r0, r%d\n", reg);
       } else {
-        // Load from stack if not in registers
+        // Local on stack. offset is -2, -4...
         fprintf(output, "    mov r8, r14\n");
-        fprintf(output, "    sub r8, %d\n", node->var->offset);
+        fprintf(output, "    sub r8, %d\n", -node->var->offset);
         fprintf(output, "    mov r0, [r8]\n");
       }
       push("r0");
@@ -97,10 +97,10 @@ static void gen_expr(Node *node) {
     push("r0");
     return;
   case ND_ASSIGN:
-    if (node->lhs->kind == ND_VAR && node->lhs->var->is_local && node->lhs->var->offset < 32) {
+    if (node->lhs->kind == ND_VAR && node->lhs->var->is_local && node->lhs->var->offset >= 0) {
       gen_expr(node->rhs);
       pop("r0");
-      int reg = node->lhs->var->offset / 8;
+      int reg = node->lhs->var->offset / 2;
       fprintf(output, "    mov r%d, r0\n", reg);
       push("r0");
     } else {
@@ -118,7 +118,6 @@ static void gen_expr(Node *node) {
       gen_expr(arg);
       nargs++;
     }
-    // Parameters are passed in r0, r1, r2, r3...
     for (int i = nargs - 1; i >= 0; i--) {
       pop(format("r%d", i));
     }
@@ -126,47 +125,10 @@ static void gen_expr(Node *node) {
     if (node->lhs->kind == ND_VAR) {
         fprintf(output, "    call _%s\n", node->lhs->var->name);
     } else {
-        // Evaluate function address to r8 and call
         gen_expr(node->lhs);
         pop("r8");
         fprintf(output, "    call [r8]\n");
     }
-    push("r0");
-    return;
-  }
-  case ND_LOGAND: {
-    int c = label_count++;
-    gen_expr(node->lhs);
-    pop("r0");
-    fprintf(output, "    cmp r0, 0\n");
-    fprintf(output, "    jz L_false_%d\n", c);
-    gen_expr(node->rhs);
-    pop("r0");
-    fprintf(output, "    cmp r0, 0\n");
-    fprintf(output, "    jz L_false_%d\n", c);
-    fprintf(output, "    mov r0, 1\n");
-    fprintf(output, "    jmp L_done_%d\n", c);
-    fprintf(output, "L_false_%d:\n", c);
-    fprintf(output, "    mov r0, 0\n");
-    fprintf(output, "L_done_%d:\n", c);
-    push("r0");
-    return;
-  }
-  case ND_LOGOR: {
-    int c = label_count++;
-    gen_expr(node->lhs);
-    pop("r0");
-    fprintf(output, "    cmp r0, 0\n");
-    fprintf(output, "    jnz L_true_%d\n", c);
-    gen_expr(node->rhs);
-    pop("r0");
-    fprintf(output, "    cmp r0, 0\n");
-    fprintf(output, "    jnz L_true_%d\n", c);
-    fprintf(output, "    mov r0, 0\n");
-    fprintf(output, "    jmp L_done_%d\n", c);
-    fprintf(output, "L_true_%d:\n", c);
-    fprintf(output, "    mov r0, 1\n");
-    fprintf(output, "L_done_%d:\n", c);
     push("r0");
     return;
   }
@@ -189,20 +151,21 @@ static void gen_expr(Node *node) {
     
     if (node->kind == ND_ADD) {
       if (node->ty->base) {
-         // Pointer arithmetic: r0 + r1 * size
-         fprintf(output, "    ; TODO: scale r1 by %d\n", node->ty->base->size);
-         if (node->ty->base->size > 1) {
-            // Very simple scaling for now
-            for (int i = 1; i < node->ty->base->size; i++) {
+         int sz = node->ty->base->size;
+         if (sz > 1) {
+            fprintf(output, "    ; scale r1 by %d\n", sz);
+            for (int i = 1; i < sz; i++) {
+                // This is a very dumb way to scale, but works for small sizes in v0
+                // For better, we'd need MUL or SHL
+                fprintf(output, "    add [--r15], r0\n");
                 fprintf(output, "    add r0, r1\n");
+                fprintf(output, "    mov r1, r0\n");
+                fprintf(output, "    mov r0, [r15++]\n");
             }
          }
       }
       fprintf(output, "    add r0, r1\n");
     } else if (node->kind == ND_SUB) {
-      if (node->ty->base) {
-         fprintf(output, "    ; TODO: scale r1\n");
-      }
       fprintf(output, "    sub r0, r1\n");
     } else if (node->kind == ND_BITAND) {
       fprintf(output, "    and r0, r1\n");
@@ -240,6 +203,42 @@ static void gen_expr(Node *node) {
     }
     push("r0");
     return;
+  case ND_LOGAND: {
+    int c = label_count++;
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_false_%d\n", c);
+    gen_expr(node->rhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_false_%d\n", c);
+    fprintf(output, "    mov r0, 1\n");
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_false_%d:\n", c);
+    fprintf(output, "    mov r0, 0\n");
+    fprintf(output, "L_done_%d:\n", c);
+    push("r0");
+    return;
+  }
+  case ND_LOGOR: {
+    int c = label_count++;
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jnz L_true_%d\n", c);
+    gen_expr(node->rhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jnz L_true_%d\n", c);
+    fprintf(output, "    mov r0, 0\n");
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_true_%d:\n", c);
+    fprintf(output, "    mov r0, 1\n");
+    fprintf(output, "L_done_%d:\n", c);
+    push("r0");
+    return;
+  }
   }
   
   error_tok(node->tok, "invalid expression");
@@ -306,8 +305,37 @@ static void gen_stmt(Node *node) {
   error_tok(node->tok, "invalid statement");
 }
 
+static void assign_lvar_offsets(Obj *prog) {
+  for (Obj *fn = prog; fn; fn = fn->next) {
+    if (!fn->is_function) continue;
+    
+    // Parameters in registers r0-r7
+    int gp = 0;
+    for (Obj *var = fn->params; var; var = var->next) {
+      if (gp < 8) {
+        var->offset = gp * 2;
+        gp++;
+      } else {
+        // Too many params, would need stack logic but for now error or hack
+        error_tok(var->tok, "too many parameters for CY16 v0");
+      }
+    }
+    
+    // Local variables on stack (negative offsets from r14)
+    int offset = 0;
+    for (Obj *var = fn->locals; var; var = var->next) {
+      if (var->offset >= 0 && var->name && strlen(var->name) > 0) continue; // Skip params
+      offset += var->ty->size;
+      offset = align_to(offset, var->ty->align);
+      var->offset = -offset;
+    }
+    fn->stack_size = align_to(offset, 2);
+  }
+}
+
 void codegen(Obj *prog, FILE *out) {
   output = out;
+  assign_lvar_offsets(prog);
 
   for (Obj *fn = prog; fn; fn = fn->next) {
     if (fn->is_function) {
@@ -320,7 +348,9 @@ void codegen(Obj *prog, FILE *out) {
       // Prologue: setup frame pointer
       push("r14");
       fprintf(output, "    mov r14, r15\n");
-      fprintf(output, "    sub r15, %d\n", fn->stack_size);
+      if (fn->stack_size > 0) {
+        fprintf(output, "    sub r15, %d\n", fn->stack_size);
+      }
       
       gen_stmt(fn->body);
       

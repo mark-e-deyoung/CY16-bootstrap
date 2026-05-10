@@ -8,23 +8,28 @@ HEADER = "typedef unsigned short uint16_t;\ntypedef short int16_t;\ntypedef unsi
 def test_compiler_add():
     c_src = "uint16_t add(uint16_t a, uint16_t b) { return a + b; }"
     asm = compile_c(HEADER + c_src)
-    image, _, _ = assemble(asm)
+    # The new C backend emits prologue/epilogue.
+    # Parameters are expected in r0, r1.
+    image, assembled_words, symbols = assemble(asm)
     
     initial_regs = [0] * 16
     initial_regs[0] = 5
     initial_regs[1] = 7
     initial_regs[15] = 0xF000
     
-    cpu, _ = run(image, 0, 0, 50, initial_regs=initial_regs)
+    # We need to find the address of _add
+    addr = symbols['_add']
+    
+    cpu, _ = run(image, 0, addr, 50, initial_regs=initial_regs)
     assert cpu.regs[0] == 12
 
 def test_compiler_read_hwrev():
     c_src = "uint16_t read_hwrev(void) { return *(volatile uint16_t *)0xC004; }"
     asm = compile_c(HEADER + c_src)
-    image, _, _ = assemble(asm)
+    image, _, symbols = assemble(asm)
     
     from cy16boot.sim import CPU
-    cpu = CPU(pc=0)
+    cpu = CPU(pc=symbols['_read_hwrev'])
     cpu.load(image, 0)
     cpu.writew(0xC004, 0x1234)
     cpu.regs[15] = 0xF000
@@ -34,6 +39,7 @@ def test_compiler_read_hwrev():
     assert cpu.regs[0] == 0x1234
 
 def test_compiler_global_load_store():
+    # The new C backend emits global definitions.
     c_src = """
     uint16_t g_var;
     uint16_t test_globals(void) {
@@ -42,11 +48,11 @@ def test_compiler_global_load_store():
     }
     """
     asm = compile_c(HEADER + c_src)
-    full_asm = ".org 0x1000\n" + asm + "\n.org 0x2000\n_g_var: .word 0\n"
+    # We don't need to manually append _g_var anymore.
+    image, _, symbols = assemble(asm)
     
-    image, _, _ = assemble(full_asm, base=0x1000)
-    cpu, _ = run(image, 0x1000, 0x1000, 100, initial_regs=[0]*16)
-    assert cpu.readw(0x2000) == 0x55AA
+    cpu, _ = run(image, 0, symbols['_test_globals'], 100, initial_regs=[0]*16)
+    assert cpu.readw(symbols['_g_var']) == 0x55AA
     assert cpu.regs[0] == 0x55AA
 
 def test_compiler_loop():
@@ -63,19 +69,18 @@ def test_compiler_loop():
     }
     """
     asm = compile_c(HEADER + c_src)
-    full_asm = ".org 0x1000\n" + asm + "\n.org 0x2000\n_g_i: .word 0\n_g_sum: .word 0\n_g_n: .word 0\n"
-    image, _, _ = assemble(full_asm, base=0x1000)
+    image, _, symbols = assemble(asm)
     
     from cy16boot.sim import CPU
-    cpu = CPU(pc=0x1000)
-    cpu.load(image, 0x1000)
-    cpu.writew(0x2004, 5) # g_n = 5
+    cpu = CPU(pc=symbols['_test_loop'])
+    cpu.load(image, 0)
+    cpu.writew(symbols['_g_n'], 5)
     cpu.regs[15] = 0xF000
     
     while not cpu.halted and cpu.steps < 1000:
         cpu.step()
         
-    assert cpu.readw(0x2002) == 10 # g_sum
+    assert cpu.readw(symbols['_g_sum']) == 10
     assert cpu.regs[0] == 10
 
 def test_compiler_call():
@@ -88,15 +93,10 @@ def test_compiler_call():
     }
     """
     asm = compile_c(HEADER + c_src)
-    image, _, _ = assemble(asm)
+    image, _, symbols = assemble(asm)
     
     initial_regs = [0] * 16
     initial_regs[15] = 0xF000
-    
-    # Entry point is test_call. We need to find its address or just put it first.
-    # The codegen emits _double_it then _test_call.
-    # Let's find _test_call address.
-    _, _, symbols = assemble(asm)
     
     cpu, _ = run(image, 0, symbols['_test_call'], 100, initial_regs=initial_regs)
     assert cpu.regs[0] == 10

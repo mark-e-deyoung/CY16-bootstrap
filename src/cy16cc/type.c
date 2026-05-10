@@ -5,17 +5,17 @@ Type *ty_bool = &(Type){TY_BOOL, 1, 1};
 
 Type *ty_char = &(Type){TY_CHAR, 1, 1};
 Type *ty_short = &(Type){TY_SHORT, 2, 2};
-Type *ty_int = &(Type){TY_INT, 4, 4};
-Type *ty_long = &(Type){TY_LONG, 8, 8};
+Type *ty_int = &(Type){TY_INT, 2, 2};
+Type *ty_long = &(Type){TY_LONG, 4, 2};
 
 Type *ty_uchar = &(Type){TY_CHAR, 1, 1, true};
 Type *ty_ushort = &(Type){TY_SHORT, 2, 2, true};
-Type *ty_uint = &(Type){TY_INT, 4, 4, true};
-Type *ty_ulong = &(Type){TY_LONG, 8, 8, true};
+Type *ty_uint = &(Type){TY_INT, 2, 2, true};
+Type *ty_ulong = &(Type){TY_LONG, 4, 2, true};
 
-Type *ty_float = &(Type){TY_FLOAT, 4, 4};
-Type *ty_double = &(Type){TY_DOUBLE, 8, 8};
-Type *ty_ldouble = &(Type){TY_LDOUBLE, 16, 16};
+Type *ty_float = &(Type){TY_FLOAT, 4, 2};
+Type *ty_double = &(Type){TY_DOUBLE, 8, 2};
+Type *ty_ldouble = &(Type){TY_LDOUBLE, 8, 2};
 
 static Type *new_type(TypeKind kind, int size, int align) {
   Type *ty = calloc(1, sizeof(Type));
@@ -95,7 +95,7 @@ Type *copy_type(Type *ty) {
 }
 
 Type *pointer_to(Type *base) {
-  Type *ty = new_type(TY_PTR, 8, 8);
+  Type *ty = new_type(TY_PTR, 2, 2);
   ty->base = base;
   ty->is_unsigned = true;
   return ty;
@@ -117,14 +117,14 @@ Type *array_of(Type *base, int len) {
 }
 
 Type *vla_of(Type *base, Node *len) {
-  Type *ty = new_type(TY_VLA, 8, 8);
+  Type *ty = new_type(TY_VLA, 2, 2);
   ty->base = base;
   ty->vla_len = len;
   return ty;
 }
 
 Type *enum_type(void) {
-  return new_type(TY_ENUM, 4, 4);
+  return new_type(TY_ENUM, 2, 2);
 }
 
 Type *struct_type(void) {
@@ -147,9 +147,9 @@ static Type *get_common_type(Type *ty1, Type *ty2) {
   if (ty1->kind == TY_FLOAT || ty2->kind == TY_FLOAT)
     return ty_float;
 
-  if (ty1->size < 4)
+  if (ty1->size < 2)
     ty1 = ty_int;
-  if (ty2->size < 4)
+  if (ty2->size < 2)
     ty2 = ty_int;
 
   if (ty1->size != ty2->size)
