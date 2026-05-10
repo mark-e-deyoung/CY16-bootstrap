@@ -9,6 +9,7 @@ from .isa import (
     RET_WORD, MODE_IMM, MODE_DIR_W, MODE_IND_R15, is_reg_mode, get_reg_from_mode,
     ALU_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX, COND_ALWAYS,
     is_ind_reg_mode, get_ind_reg_from_mode,
+    OP_SPECIAL_PREFIX, SPECIAL_NAMES,
     COND_Z, COND_NZ, COND_C, COND_NC, COND_S, COND_NS, COND_O, COND_NO,
     COND_A, COND_BE, COND_G, COND_GE, COND_L, COND_LE
 )
@@ -91,10 +92,8 @@ class CPU:
         if cond == COND_NS: return not self.fs
         if cond == COND_O:  return self.fo
         if cond == COND_NO: return not self.fo
-        # Unsigned
         if cond == COND_A:  return not self.fc and not self.fz
         if cond == COND_BE: return self.fc or self.fz
-        # Signed
         if cond == COND_G:  return (self.fs == self.fo) and not self.fz
         if cond == COND_GE: return (self.fs == self.fo)
         if cond == COND_L:  return (self.fs != self.fo)
@@ -104,14 +103,14 @@ class CPU:
     def update_flags(self, res: int, op1: int, op2: int, op_type: str):
         self.fz = (res == 0)
         self.fs = (res & 0x8000) != 0
-        if op_type == 'add':
+        if op_type == 'add' or op_type == 'addi':
             self.fc = (op1 + op2) > 0xFFFF
             self.fo = ((op1 ^ res) & (op2 ^ res) & 0x8000) != 0
-        elif op_type == 'sub' or op_type == 'cmp':
+        elif op_type == 'sub' or op_type == 'subi' or op_type == 'cmp':
             self.fc = op1 < op2
             self.fo = ((op1 ^ op2) & (op1 ^ res) & 0x8000) != 0
-        elif op_type in ('and', 'or', 'xor', 'test'):
-            self.fc = False
+        elif op_type in ('and', 'or', 'xor', 'test', 'shl', 'shr', 'rol', 'ror'):
+            self.fc = False # Simplified for now
             self.fo = False
 
     def step(self) -> str:
@@ -133,7 +132,6 @@ class CPU:
             
             src_val, src_str = self.get_op_val(src_mode)
             dst_val = 0
-            # Peek dst val if needed
             if op_name != 'mov':
                 if is_reg_mode(dst_mode):
                     dst_val = self.regs[get_reg_from_mode(dst_mode)]
@@ -156,7 +154,6 @@ class CPU:
             if op_name != 'cmp' and op_name != 'test':
                 dst_str = self.set_op_val(dst_mode, res)
             else:
-                # Still need to advance PC for direct dst
                 if dst_mode == MODE_DIR_W:
                     self.pc = (self.pc + 2) & 0xFFFF
                     dst_str = f"[0x{self.readw(self.pc-2):04x}]"
@@ -166,7 +163,35 @@ class CPU:
                     dst_str = f"[r{get_ind_reg_from_mode(dst_mode)}]"
                 else: dst_str = "?"
 
-            text = f"{op_name} {dst_str}, {src_str} ; res=0x{res:04x} flags={'Z' if self.fz else ''}{'C' if self.fc else ''}{'S' if self.fs else ''}{'O' if self.fo else ''}"
+            text = f"{op_name} {dst_str}, {src_str} ; res=0x{res:04x}"
+            self.steps += 1
+            return f"{self.steps:06d} pc=0x{pc0:04x} {text}"
+
+        if opcode == OP_SPECIAL_PREFIX:
+            special_op = (w >> 9) & 0x7
+            count = ((w >> 6) & 0x7) + 1
+            dst_mode = w & 0x3F
+            self.pc = (self.pc + 2) & 0xFFFF
+            
+            op_name = SPECIAL_NAMES[special_op]
+            dst_val = 0
+            if is_reg_mode(dst_mode):
+                dst_val = self.regs[get_reg_from_mode(dst_mode)]
+            elif is_ind_reg_mode(dst_mode):
+                dst_val = self.readw(self.regs[get_ind_reg_from_mode(dst_mode)])
+            elif dst_mode == MODE_DIR_W:
+                addr = self.readw(self.pc)
+                dst_val = self.readw(addr)
+            
+            if op_name == 'shl': res = (dst_val << count) & 0xFFFF
+            elif op_name == 'shr': res = (dst_val >> count) & 0xFFFF
+            elif op_name == 'addi': res = (dst_val + count) & 0xFFFF
+            elif op_name == 'subi': res = (dst_val - count) & 0xFFFF
+            else: res = dst_val
+            
+            self.update_flags(res, dst_val, count, op_name)
+            dst_str = self.set_op_val(dst_mode, res)
+            text = f"{op_name} {dst_str}, {count} ; res=0x{res:04x}"
             self.steps += 1
             return f"{self.steps:06d} pc=0x{pc0:04x} {text}"
 

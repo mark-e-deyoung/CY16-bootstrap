@@ -6,7 +6,9 @@ from pathlib import Path
 from .common import le_to_word, read_bytes
 from .isa import (
     RET_WORD, MODE_IMM, MODE_DIR_W, MODE_IND_R15, is_reg_mode, get_reg_from_mode,
-    ALU_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX, COND_ALWAYS
+    ALU_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX, COND_ALWAYS,
+    is_ind_reg_mode, get_ind_reg_from_mode,
+    SPECIAL_NAMES, OP_SPECIAL_PREFIX
 )
 
 
@@ -44,6 +46,8 @@ def disassemble(data: bytes, base: int = 0) -> list[str]:
                     val = le_to_word(data, ext_off)
                     return f"[0x{val:04x}]", 2
                 return "??? ([addr])", 0
+            if is_ind_reg_mode(mode):
+                return f"[r{get_ind_reg_from_mode(mode)}]", 0
             return f"mode_{mode:02x}", 0
 
         # ALU operations
@@ -63,6 +67,24 @@ def disassemble(data: bytes, base: int = 0) -> list[str]:
             out.append(f"{addr:04x}: {words_hex:<15}  {op_name} {d_str}, {s_str}")
             off += 2 + s_len + d_len
             continue
+
+        # Special (shifts/addi/subi)
+        if opcode == OP_SPECIAL_PREFIX:
+            special_op = (w >> 9) & 0x7
+            count = ((w >> 6) & 0x7) + 1
+            dst_mode = w & 0x3F
+            
+            if special_op in SPECIAL_NAMES:
+                op_name = SPECIAL_NAMES[special_op]
+                d_str, d_len = get_op_str(dst_mode, off + 2, is_dst=True)
+                
+                words = [w]
+                if d_len: words.append(le_to_word(data, off + 2))
+                
+                words_hex = " ".join(f"{ww:04x}" for ww in words)
+                out.append(f"{addr:04x}: {words_hex:<15}  {op_name} {d_str}, {count}")
+                off += 2 + d_len
+                continue
 
         # JMP/CALL
         if opcode == OP_JMP_RET_PREFIX or opcode == OP_CALL_PREFIX:

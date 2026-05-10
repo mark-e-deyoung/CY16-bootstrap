@@ -22,7 +22,6 @@ static void gen_addr(Node *node) {
   case ND_VAR:
     if (node->var->is_local) {
       if (node->var->offset >= 0) {
-        // Parameter in register
         error_tok(node->tok, "taking address of register-mapped parameter not supported");
       }
       fprintf(output, "    mov r0, r14\n");
@@ -39,17 +38,21 @@ static void gen_addr(Node *node) {
   case ND_MEMBER:
     gen_addr(node->lhs);
     pop("r0");
-    fprintf(output, "    add r0, %d\n", node->member->offset);
+    if (node->member->offset > 0) {
+      fprintf(output, "    addi r0, %d\n", node->member->offset);
+    }
     push("r0");
     return;
   default:
-    error_tok(node->tok, "not an lvalue");
+    error_tok(node->tok, "not an lvalue (kind %d)", node->kind);
   }
 }
 
 // Generate code for a given expression node.
 static void gen_expr(Node *node) {
   switch (node->kind) {
+  case ND_NULL_EXPR:
+    return;
   case ND_NUM:
     fprintf(output, "    mov r0, %ld\n", node->val);
     push("r0");
@@ -63,13 +66,16 @@ static void gen_expr(Node *node) {
     push("r0");
     return;
   case ND_VAR:
+    if (node->var->ty->kind == TY_ARRAY) {
+       // Array to pointer conversion: use address
+       gen_addr(node);
+       return;
+    }
     if (node->var->is_local) {
       if (node->var->offset >= 0) {
-        // Param in r0-r7. offset is 0, 2, 4...
         int reg = node->var->offset / 2;
         fprintf(output, "    mov r0, r%d\n", reg);
       } else {
-        // Local on stack. offset is -2, -4...
         fprintf(output, "    mov r8, r14\n");
         fprintf(output, "    sub r8, %d\n", -node->var->offset);
         fprintf(output, "    mov r0, [r8]\n");
@@ -140,6 +146,8 @@ static void gen_expr(Node *node) {
   case ND_BITAND:
   case ND_BITOR:
   case ND_BITXOR:
+  case ND_SHL:
+  case ND_SHR:
   case ND_LT:
   case ND_LE:
   case ND_EQ:
@@ -152,20 +160,29 @@ static void gen_expr(Node *node) {
     if (node->kind == ND_ADD) {
       if (node->ty->base) {
          int sz = node->ty->base->size;
-         if (sz > 1) {
-            fprintf(output, "    ; scale r1 by %d\n", sz);
-            for (int i = 1; i < sz; i++) {
-                // This is a very dumb way to scale, but works for small sizes in v0
-                // For better, we'd need MUL or SHL
-                fprintf(output, "    add [--r15], r0\n");
-                fprintf(output, "    add r0, r1\n");
-                fprintf(output, "    mov r1, r0\n");
-                fprintf(output, "    mov r0, [r15++]\n");
-            }
+         if (sz == 2) {
+             fprintf(output, "    shl r1, 1\n");
+         } else if (sz == 4) {
+             fprintf(output, "    shl r1, 2\n");
+         } else if (sz > 1) {
+             for (int i = 1; i < sz; i++) {
+                 fprintf(output, "    add [--r15], r0\n");
+                 fprintf(output, "    add r0, r1\n");
+                 fprintf(output, "    mov r1, r0\n");
+                 fprintf(output, "    mov r0, [r15++]\n");
+             }
          }
       }
       fprintf(output, "    add r0, r1\n");
     } else if (node->kind == ND_SUB) {
+      if (node->ty->base) {
+         int sz = node->ty->base->size;
+         if (sz == 2) {
+             fprintf(output, "    shl r1, 1\n");
+         } else if (sz == 4) {
+             fprintf(output, "    shl r1, 2\n");
+         }
+      }
       fprintf(output, "    sub r0, r1\n");
     } else if (node->kind == ND_BITAND) {
       fprintf(output, "    and r0, r1\n");
@@ -173,6 +190,19 @@ static void gen_expr(Node *node) {
       fprintf(output, "    or r0, r1\n");
     } else if (node->kind == ND_BITXOR) {
       fprintf(output, "    xor r0, r1\n");
+    } else if (node->kind == ND_SHL) {
+      // RHS must be constant for now?
+      if (node->rhs->kind == ND_NUM) {
+          fprintf(output, "    shl r0, %ld\n", node->rhs->val);
+      } else {
+          error_tok(node->tok, "dynamic SHL not supported");
+      }
+    } else if (node->kind == ND_SHR) {
+      if (node->rhs->kind == ND_NUM) {
+          fprintf(output, "    shr r0, %ld\n", node->rhs->val);
+      } else {
+          error_tok(node->tok, "dynamic SHR not supported");
+      }
     } else if (node->kind == ND_LT) {
       int c = label_count++;
       fprintf(output, "    cmp r0, r1\n");
@@ -239,9 +269,14 @@ static void gen_expr(Node *node) {
     push("r0");
     return;
   }
+  case ND_MUL:
+  case ND_DIV:
+  case ND_MOD:
+    error_tok(node->tok, "MUL/DIV/MOD not yet implemented for CY16");
+    return;
+  default:
+    error_tok(node->tok, "invalid expression (kind %d)", node->kind);
   }
-  
-  error_tok(node->tok, "invalid expression");
 }
 
 static void gen_stmt(Node *node) {
@@ -258,8 +293,10 @@ static void gen_stmt(Node *node) {
     fprintf(output, "    jmp L_return_%s\n", current_fn->name);
     return;
   case ND_EXPR_STMT:
-    gen_expr(node->lhs);
-    pop("r0"); 
+    if (node->lhs) {
+      gen_expr(node->lhs);
+      pop("r0"); 
+    }
     return;
   case ND_IF: {
     int c = label_count++;
@@ -300,31 +337,28 @@ static void gen_stmt(Node *node) {
     fprintf(output, "L_end_%d:\n", c);
     return;
   }
+  default:
+    error_tok(node->tok, "invalid statement (kind %d)", node->kind);
   }
-  
-  error_tok(node->tok, "invalid statement");
 }
 
 static void assign_lvar_offsets(Obj *prog) {
   for (Obj *fn = prog; fn; fn = fn->next) {
     if (!fn->is_function) continue;
     
-    // Parameters in registers r0-r7
     int gp = 0;
     for (Obj *var = fn->params; var; var = var->next) {
       if (gp < 8) {
         var->offset = gp * 2;
         gp++;
       } else {
-        // Too many params, would need stack logic but for now error or hack
         error_tok(var->tok, "too many parameters for CY16 v0");
       }
     }
     
-    // Local variables on stack (negative offsets from r14)
     int offset = 0;
     for (Obj *var = fn->locals; var; var = var->next) {
-      if (var->offset >= 0 && var->name && strlen(var->name) > 0) continue; // Skip params
+      if (var->offset >= 0 && var->name && strlen(var->name) > 0) continue; 
       offset += var->ty->size;
       offset = align_to(offset, var->ty->align);
       var->offset = -offset;
@@ -345,7 +379,6 @@ void codegen(Obj *prog, FILE *out) {
       fprintf(output, ".global _%s\n", fn->name);
       fprintf(output, "_%s:\n", fn->name);
       
-      // Prologue: setup frame pointer
       push("r14");
       fprintf(output, "    mov r14, r15\n");
       if (fn->stack_size > 0) {
@@ -355,7 +388,6 @@ void codegen(Obj *prog, FILE *out) {
       gen_stmt(fn->body);
       
       fprintf(output, "L_return_%s:\n", fn->name);
-      // Epilogue
       fprintf(output, "    mov r15, r14\n");
       pop("r14");
       fprintf(output, "    ret\n");

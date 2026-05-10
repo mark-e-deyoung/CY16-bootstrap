@@ -10,7 +10,8 @@ from .isa import (
     RET_WORD, MODE_IMM, MODE_DIR_W, MODE_IND_R15, encode_alu, make_reg_mode,
     OP_MOV, OP_ADD, OP_ADDC, OP_SUB, OP_SUBB, OP_CMP, OP_AND, OP_TEST, OP_OR, OP_XOR,
     COND_ALWAYS, encode_jmp_abs, encode_call_abs, ALU_OPS,
-    make_ind_reg_mode, COND_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX
+    make_ind_reg_mode, COND_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX,
+    SPECIAL_OPS, encode_special
 )
 
 @dataclass
@@ -73,16 +74,23 @@ def estimate_words(body: str) -> int:
     if low == 'ret':
         return 1
     
-    op_name = low.split(None, 1)[0]
+    op_parts = low.split(None, 1)
+    op_name = op_parts[0]
     if op_name in ALU_OPS:
-        ops = split_operands(body[len(op_name):].strip())
+        ops = split_operands(op_parts[1].strip() if len(op_parts) > 1 else "")
         if len(ops) == 2:
             src_mode, src_ext = parse_operand(ops[1])
             dst_mode, dst_ext = parse_operand(ops[0])
             return 1 + (1 if src_ext is not None else 0) + (1 if dst_ext is not None else 0)
     
+    if op_name in SPECIAL_OPS:
+        ops = split_operands(op_parts[1].strip() if len(op_parts) > 1 else "")
+        if len(ops) == 2:
+            mode, ext = parse_operand(ops[0])
+            return 1 + (1 if ext is not None else 0)
+
     if op_name == 'jmp' or op_name == 'call' or (op_name.startswith(('j', 'c')) and op_name[1:] in COND_NAMES):
-        target = body[len(op_name):].strip()
+        target = op_parts[1].strip() if len(op_parts) > 1 else ""
         mode, ext = parse_operand(target)
         return 1 + (1 if ext is not None else 0)
 
@@ -172,6 +180,25 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
                 pc = (pc + 2) & 0xFFFF
             continue
             
+        if op_name in SPECIAL_OPS:
+            ops = split_operands(op_parts[1].strip() if len(op_parts) > 1 else "")
+            if len(ops) != 2:
+                raise Cy16Error(f"line {line.number}: {op_name} requires two operands")
+            dst, count_expr = ops
+            dst_mode, dst_ext = parse_operand(dst)
+            count = eval_expr(count_expr, symbols, pc)
+            if not (1 <= count <= 8):
+                raise Cy16Error(f"line {line.number}: shift/addi count must be 1-8")
+            
+            enc = encode_special(SPECIAL_OPS[op_name], count, dst_mode)
+            words.append(Word(pc, enc, line.text))
+            pc = (pc + 2) & 0xFFFF
+            if dst_ext is not None:
+                val = eval_expr(dst_ext, symbols, pc) & 0xFFFF
+                words.append(Word(pc, val, line.text))
+                pc = (pc + 2) & 0xFFFF
+            continue
+
         if op_name == 'jmp' or op_name == 'call' or (op_name.startswith(('j', 'c')) and op_name[1:] in COND_NAMES):
             cond = COND_ALWAYS
             base_op = op_name
@@ -196,8 +223,6 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
                 pc = (pc + 2) & 0xFFFF
             continue
 
-        raise Cy16Error(f"line {line.number}: unsupported statement: {body}")
-    
     if not words:
         return b'', words, symbols
     low_addr = min(w.addr for w in words)

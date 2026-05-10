@@ -8,8 +8,6 @@ HEADER = "typedef unsigned short uint16_t;\ntypedef short int16_t;\ntypedef unsi
 def test_compiler_add():
     c_src = "uint16_t add(uint16_t a, uint16_t b) { return a + b; }"
     asm = compile_c(HEADER + c_src)
-    # The new C backend emits prologue/epilogue.
-    # Parameters are expected in r0, r1.
     image, assembled_words, symbols = assemble(asm)
     
     initial_regs = [0] * 16
@@ -17,7 +15,6 @@ def test_compiler_add():
     initial_regs[1] = 7
     initial_regs[15] = 0xF000
     
-    # We need to find the address of _add
     addr = symbols['_add']
     
     cpu, _ = run(image, 0, addr, 50, initial_regs=initial_regs)
@@ -39,7 +36,6 @@ def test_compiler_read_hwrev():
     assert cpu.regs[0] == 0x1234
 
 def test_compiler_global_load_store():
-    # The new C backend emits global definitions.
     c_src = """
     uint16_t g_var;
     uint16_t test_globals(void) {
@@ -48,7 +44,6 @@ def test_compiler_global_load_store():
     }
     """
     asm = compile_c(HEADER + c_src)
-    # We don't need to manually append _g_var anymore.
     image, _, symbols = assemble(asm)
     
     cpu, _ = run(image, 0, symbols['_test_globals'], 100, initial_regs=[0]*16)
@@ -100,3 +95,25 @@ def test_compiler_call():
     
     cpu, _ = run(image, 0, symbols['_test_call'], 100, initial_regs=initial_regs)
     assert cpu.regs[0] == 10
+
+def test_compiler_ptr_arith():
+    c_src = """
+    uint16_t g_arr[10];
+    uint16_t test_ptr(void) {
+        uint16_t *p = g_arr;
+        *p = 0x1111;
+        *(p + 1) = 0x2222;
+        *(p + 2) = 0x3333;
+        return g_arr[1] + g_arr[2];
+    }
+    """
+    asm = compile_c(HEADER + c_src)
+    image, _, symbols = assemble(asm)
+    
+    initial_regs = [0] * 16
+    initial_regs[15] = 0xF000
+    
+    cpu, _ = run(image, 0, symbols['_test_ptr'], 100, initial_regs=initial_regs)
+    assert cpu.readw(symbols['_g_arr'] + 2) == 0x2222
+    assert cpu.readw(symbols['_g_arr'] + 4) == 0x3333
+    assert cpu.regs[0] == 0x5555

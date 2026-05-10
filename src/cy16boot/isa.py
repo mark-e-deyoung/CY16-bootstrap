@@ -27,6 +27,18 @@ ALU_OPS = {
 
 ALU_NAMES = {v: k for k, v in ALU_OPS.items()}
 
+# Special opcodes prefix 1101 (0xD)
+OP_SPECIAL_PREFIX = 0xD
+SPECIAL_OPS = {
+    'shr': 0b000,
+    'shl': 0b001,
+    'ror': 0b010,
+    'rol': 0b011,
+    'addi': 0b100,
+    'subi': 0b101,
+}
+SPECIAL_NAMES = {v: k for k, v in SPECIAL_OPS.items()}
+
 # Special opcodes
 OP_JMP_RET_PREFIX = 0xC  # 1100
 OP_CALL_PREFIX    = 0xA  # 1010
@@ -84,6 +96,10 @@ MODE_IND_R15 = 0b010111
 
 def encode_alu(op: int, src_mode: int, dst_mode: int) -> int:
     return (op << 12) | ((src_mode & 0x3F) << 6) | (dst_mode & 0x3F)
+
+def encode_special(op: int, count: int, dst_mode: int) -> int:
+    # count is 1-8, stored as 0-7
+    return (OP_SPECIAL_PREFIX << 12) | ((op & 0x7) << 9) | (((count - 1) & 0x7) << 6) | (dst_mode & 0x3F)
 
 def encode_jmp_abs(cond: int, dst_mode: int) -> int:
     return (OP_JMP_RET_PREFIX << 12) | (cond << 8) | (1 << 7) | (dst_mode & 0x3F)
