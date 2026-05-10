@@ -27,6 +27,7 @@ jobs:
 
     - name: Build C-based Compiler
       run: |
+        make -C . clean
         make -C . CC=gcc
 
     - name: Run Python-based Tests
