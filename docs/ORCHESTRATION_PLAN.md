@@ -54,7 +54,18 @@ graph TD
 
 ## 6. Execution Plan
 1.  **Done:** Update this Orchestration Plan with Phase 9 & 10 details.
-2.  **Next:** Commit and push the updated plan to GitHub.
-3.  **Then:** Spawn Jules Session 1 for Phase 9 C Compiler features.
-4.  **Then:** Spawn Jules Session 2 for Phase 10 Assembler features.
-5.  **Finally:** Monitor Jules sessions, apply patches, and verify locally.
+2.  **Done:** Commit and push the updated plan to GitHub.
+3.  **Done:** Spawn Jules Session 1 for Phase 9 C Compiler features.
+4.  **Done:** Spawn Jules Session 2 for Phase 10 Assembler features.
+5.  **In Progress:** Monitor Jules sessions, apply patches, and verify locally.
+
+## 7. Current Handoff Status
+* **Containerization:** A multi-stage Dockerfile and a PowerShell helper (`scripts/run_docker.ps1`) are implemented and pushed to the repository.
+* **Build Status:** The Docker build is currently failing during the validation ladder on `test_compiler_ptr_arith`. The C backend (`cy16_codegen.c`) is missing support for `ND_COMMA` (Node kind 18) and potentially other nodes required for variable initialization in pointer arithmetic testing.
+* **Active Jules Sessions:**
+  * Session 1 (Phase 9 C Compiler Features): https://jules.google.com/session/7016060761375672113
+  * Session 2 (Phase 10 GNUPro Assembler): https://jules.google.com/session/12822227189761318531
+* **Next Actions:**
+  1. Fix the `ND_COMMA` omission and any other remaining missing nodes in `src/cy16cc/cy16_codegen.c` (`gen_expr`).
+  2. Complete the Docker build and verify the validation ladder runs cleanly.
+  3. Wait for the active Jules sessions to complete and merge their changes.
