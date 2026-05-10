@@ -1,0 +1,53 @@
+--- src/cy16cc/cy16_codegen.c
++++ src/cy16cc/cy16_codegen.c
+@@ -134,16 +134,16 @@
+       fprintf(output, "    sub r0, r1\n");
+     } else if (node->kind == ND_LT) {
+       fprintf(output, "    cmp r0, r1\n");
+-      fprintf(output, "    jc .L%d\n", label_count);
++      fprintf(output, "    jc L_%d\n", label_count);
+       fprintf(output, "    mov r0, 0\n");
+-      fprintf(output, "    jmp .L%d\n", label_count+1);
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "    jmp L_%d\n", label_count+1);
++      fprintf(output, "L_%d:\n", label_count++);
+       fprintf(output, "    mov r0, 1\n");
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "L_%d:\n", label_count++);
+     } else if (node->kind == ND_LE) {
+       fprintf(output, "    cmp r1, r0\n");
+-      fprintf(output, "    jc .L%d\n", label_count); // if r1 < r0 (so r0 > r1, false)
++      fprintf(output, "    jc L_%d\n", label_count); // if r1 < r0 (so r0 > r1, false)
+       fprintf(output, "    mov r0, 1\n");
+-      fprintf(output, "    jmp .L%d\n", label_count+1);
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "    jmp L_%d\n", label_count+1);
++      fprintf(output, "L_%d:\n", label_count++);
+       fprintf(output, "    mov r0, 0\n");
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "L_%d:\n", label_count++);
+     } else if (node->kind == ND_EQ) {
+       fprintf(output, "    cmp r0, r1\n");
+-      fprintf(output, "    jz .L%d\n", label_count);
++      fprintf(output, "    jz L_%d\n", label_count);
+       fprintf(output, "    mov r0, 0\n");
+-      fprintf(output, "    jmp .L%d\n", label_count+1);
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "    jmp L_%d\n", label_count+1);
++      fprintf(output, "L_%d:\n", label_count++);
+       fprintf(output, "    mov r0, 1\n");
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "L_%d:\n", label_count++);
+     } else if (node->kind == ND_NE) {
+       fprintf(output, "    cmp r0, r1\n");
+-      fprintf(output, "    jz .L%d\n", label_count);
++      fprintf(output, "    jz L_%d\n", label_count);
+       fprintf(output, "    mov r0, 1\n");
+-      fprintf(output, "    jmp .L%d\n", label_count+1);
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "    jmp L_%d\n", label_count+1);
++      fprintf(output, "L_%d:\n", label_count++);
+       fprintf(output, "    mov r0, 0\n");
+-      fprintf(output, ".L%d:\n", label_count++);
++      fprintf(output, "L_%d:\n", label_count++);
+     }

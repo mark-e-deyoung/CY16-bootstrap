@@ -23,6 +23,8 @@ The next major objective is to transition from the Python prototype compiler to 
 
 ### Google Jules (Delegated Refactoring/Porting)
 *   **Task:** Port `src/cy16cc` (chibicc) to emit CY16 assembly.
+*   **Status:** Active. Session ID: `15245112921042408519`.
+*   **URL:** https://jules.google.com/session/15245112921042408519
 *   **Reasoning:** Jules excels at large-scale, multi-file refactoring. Converting the C-based x86-64 code generator (`codegen.c`) to a CY16 backend (`cy16_codegen.c`) is a substantial, highly context-dependent task. Jules can analyze the existing C codebase and replace the backend emission logic in parallel while local work continues.
 
 ## 4. Sequencing Diagram

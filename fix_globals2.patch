@@ -1,0 +1,11 @@
+--- src/cy16cc/cy16_codegen.c
++++ src/cy16cc/cy16_codegen.c
+@@ -237,6 +237,8 @@
+       fprintf(output, "\n");
+     } else {
+         // Global variables
++        if (!strncmp(fn->name, ".L", 2)) continue;
++
+         fprintf(output, ".global _%s\n", fn->name);
+         fprintf(output, "_%s:\n", fn->name);
+         if (fn->init_data) {

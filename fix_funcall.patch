@@ -1,0 +1,17 @@
+--- src/cy16cc/cy16_codegen.c
++++ src/cy16cc/cy16_codegen.c
+@@ -110,7 +110,13 @@
+     for (int i = nargs - 1; i >= 0; i--) {
+       pop(format("r%d", i));
+     }
+-    fprintf(output, "    call _%s\n", node->func_ty->name->str);
++    
++    if (node->lhs && node->lhs->kind == ND_VAR) {
++        fprintf(output, "    call _%s\n", node->lhs->var->name);
++    } else {
++        // Fallback for function pointers or similar
++        fprintf(output, "    call _%s\n", node->func_ty->name->str);
++    }
+     push("r0");
+     return;
+   }

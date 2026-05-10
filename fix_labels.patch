@@ -1,0 +1,73 @@
+--- src/cy16cc/cy16_codegen.c
++++ src/cy16cc/cy16_codegen.c
+@@ -165,13 +165,13 @@
+     if (node->lhs) {
+       gen_expr(node->lhs);
+       pop("r0");
+     }
+-    fprintf(output, "    jmp .L.return.%s\n", current_fn->name);
++    fprintf(output, "    jmp L_return_%s\n", current_fn->name);
+     return;
+   case ND_EXPR_STMT:
+     gen_expr(node->lhs);
+     pop("r0"); // discard result
+     return;
+   case ND_IF: {
+     int c = label_count++;
+     gen_expr(node->cond);
+@@ -179,36 +179,36 @@
+     fprintf(output, "    cmp r0, 0\n");
+     if (node->els) {
+-      fprintf(output, "    jz .L.else.%d\n", c);
++      fprintf(output, "    jz L_else_%d\n", c);
+       gen_stmt(node->then);
+-      fprintf(output, "    jmp .L.end.%d\n", c);
+-      fprintf(output, ".L.else.%d:\n", c);
++      fprintf(output, "    jmp L_end_%d\n", c);
++      fprintf(output, "L_else_%d:\n", c);
+       gen_stmt(node->els);
+-      fprintf(output, ".L.end.%d:\n", c);
++      fprintf(output, "L_end_%d:\n", c);
+     } else {
+-      fprintf(output, "    jz .L.end.%d\n", c);
++      fprintf(output, "    jz L_end_%d\n", c);
+       gen_stmt(node->then);
+-      fprintf(output, ".L.end.%d:\n", c);
++      fprintf(output, "L_end_%d:\n", c);
+     }
+     return;
+   }
+   case ND_FOR: {
+     int c = label_count++;
+     if (node->init)
+       gen_stmt(node->init);
+-    fprintf(output, ".L.begin.%d:\n", c);
++    fprintf(output, "L_begin_%d:\n", c);
+     if (node->cond) {
+       gen_expr(node->cond);
+       pop("r0");
+       fprintf(output, "    cmp r0, 0\n");
+-      fprintf(output, "    jz .L.end.%d\n", c);
++      fprintf(output, "    jz L_end_%d\n", c);
+     }
+     gen_stmt(node->then);
+     if (node->inc) {
+       gen_expr(node->inc);
+       pop("r0");
+     }
+-    fprintf(output, "    jmp .L.begin.%d\n", c);
+-    fprintf(output, ".L.end.%d:\n", c);
++    fprintf(output, "    jmp L_begin_%d\n", c);
++    fprintf(output, "L_end_%d:\n", c);
+     return;
+   }
+   }
+@@ -232,9 +232,9 @@
+       
+       gen_stmt(fn->body);
+       
+-      fprintf(output, ".L.return.%s:\n", fn->name);
++      fprintf(output, "L_return_%s:\n", fn->name);
+       fprintf(output, "    ret\n");
+       fprintf(output, "\n");
+     } else {

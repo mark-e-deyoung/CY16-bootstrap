@@ -1,0 +1,21 @@
+--- src/cy16cc/cy16_codegen.c
++++ src/cy16cc/cy16_codegen.c
+@@ -21,11 +21,12 @@
+   fprintf(output, "    mov %s, [r15++]\n", reg);
+ }
+ 
++/*
+ static void gen_addr(Node *node) {
+   switch (node->kind) {
+   case ND_VAR:
+     if (node->var->is_local) {
+-      // For local variables, normally they are offset from frame pointer.
+       error_tok(node->tok, "not an lvalue / taking address of local not supported yet in simple CY16 codegen");
+     } else {
+       fprintf(output, "    mov r0, _%s\n", node->var->name); // wait, `mov r0, _sym` is not in ISA. 
+@@ -38,6 +39,7 @@
+   default:
+     error_tok(node->tok, "not an lvalue");
+   }
+ }
++*/
