@@ -17,6 +17,13 @@ docker build -t cy16-ladder .
 
 Result: `19 passed` in the Python test suite, setup-stub disassembly/simulation ran, and the image built successfully.
 
+GitHub Actions validation:
+
+- PR: https://github.com/mark-e-deyoung/CY16-bootstrap/pull/1
+- Branch: `codex-bringup-ladder-fix`
+- Latest run: `25634928788`
+- Result: success
+
 ## Completed in this orchestration pass
 
 The previous blocker was `test_compiler_ptr_arith`. It exposed several sequential backend issues:
@@ -112,21 +119,21 @@ graph TD
     L --> M[USB class/application bring-up]
 ```
 
-## Current blockers to delegation
+## Current delegation state
 
-- `gh auth status` reports the active GitHub token is invalid. Re-authenticate with `gh auth login -h github.com` before delegating validation to GitHub Actions.
+- GitHub CLI auth is working for `mark-e-deyoung`; PR validation is active.
 - `jules` works when the broken proxy environment variables are cleared for the process. The persistent environment currently points `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `GIT_HTTP_PROXY`, and `GIT_HTTPS_PROXY` at `127.0.0.1:9`.
 
 ## Active Jules sessions
 
-- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562
-- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796
+- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Planning` as of latest poll)
+- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`In Progress` as of latest poll)
 
 These sessions were created against `mark-e-deyoung/CY16-bootstrap`, not the uncommitted local workspace. Integrate them only after preserving or committing the local ladder fix in `src/cy16cc/cy16_codegen.c`.
 
 ## Recommended next actions
 
-1. Re-authenticate GitHub CLI, then push the current branch and let GitHub Actions run the Docker/Linux ladder.
+1. Merge PR #1 after review, or keep it open as the integration baseline for Jules results.
 2. Monitor the active Jules sessions listed above.
 3. Pull and integrate Jules results sequentially, rerunning `docker build -t cy16-ladder .` after each.
 4. Once CI and local Docker are green, generate SCAN examples and move to DE2-115 HPI readback validation.
