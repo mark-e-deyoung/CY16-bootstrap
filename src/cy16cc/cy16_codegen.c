@@ -7,11 +7,6 @@ static Obj *current_fn;
 static void gen_expr(Node *node);
 static void gen_stmt(Node *node);
 
-// The original x86-64 chibicc codegen evaluates everything onto the stack.
-// The CY16 python prototype evaluates everything using a stack pointer `r15`
-// but leaves the top-of-stack equivalent in a given register or pops it.
-// Let's mimic the x86-64 style adapted for CY16.
-
 // Pushes the given register to the stack
 static void push(char *reg) {
   fprintf(output, "    mov [--r15], %s\n", reg);
@@ -26,17 +21,15 @@ static void gen_addr(Node *node) {
   switch (node->kind) {
   case ND_VAR:
     if (node->var->is_local) {
-      // For local variables, normally they are offset from frame pointer.
-      // The python prototype mapped them to r0, r1, etc.
-      // If we just map parameters to registers in CY16, taking the address of a register is invalid.
-      // But let's assume we map parameters to offsets from a frame pointer (r14) if needed.
-      // Actually, if it's just tests, maybe we don't need address of local variables yet.
-      error_tok(node->tok, "not an lvalue / taking address of local not supported yet in simple CY16 codegen");
+      // Map locals to offsets from r14 (frame pointer) if we support stack locals.
+      // For now, let's stick to the register-mapping for params but error on others.
+      if (node->var->offset < 32) { // R0-R3
+         error_tok(node->tok, "taking address of register-mapped local not supported");
+      }
+      fprintf(output, "    mov r0, r14\n");
+      fprintf(output, "    sub r0, %d\n", node->var->offset);
+      push("r0");
     } else {
-      fprintf(output, "    mov r0, _%s\n", node->var->name); // wait, `mov r0, _sym` is not in ISA. 
-      // ISA says: `mov rN, imm` or `mov rN, [addr]`
-      // Labels are basically immediates. `mov r0, _%s` is valid assembler if it evaluates to an immediate.
-      // BUT `mov [addr], imm` doesn't exist? Wait, `mov [addr], imm` DOES exist. `mov rN, imm` exists.
       fprintf(output, "    mov r0, _%s\n", node->var->name);
       push("r0");
     }
@@ -44,12 +37,18 @@ static void gen_addr(Node *node) {
   case ND_DEREF:
     gen_expr(node->lhs);
     return;
+  case ND_MEMBER:
+    gen_addr(node->lhs);
+    pop("r0");
+    fprintf(output, "    add r0, %d\n", node->member->offset);
+    push("r0");
+    return;
   default:
     error_tok(node->tok, "not an lvalue");
   }
 }
 
-// Generate code for a given expression node. Result is left in `r0`.
+// Generate code for a given expression node.
 static void gen_expr(Node *node) {
   switch (node->kind) {
   case ND_NUM:
@@ -66,40 +65,52 @@ static void gen_expr(Node *node) {
     return;
   case ND_VAR:
     if (node->var->is_local) {
-      // Map locals to param registers if they are parameters (offset = param idx)
-      // Actually, we can just say r0, r1, r2, r3
       int reg = node->var->offset / 8;
-      fprintf(output, "    mov r0, r%d\n", reg);
+      if (reg < 8) {
+        fprintf(output, "    mov r0, r%d\n", reg);
+      } else {
+        // Load from stack if not in registers
+        fprintf(output, "    mov r8, r14\n");
+        fprintf(output, "    sub r8, %d\n", node->var->offset);
+        fprintf(output, "    mov r0, [r8]\n");
+      }
       push("r0");
     } else {
       fprintf(output, "    mov r0, [_%s]\n", node->var->name);
       push("r0");
     }
     return;
-  case ND_ASSIGN:
-    gen_expr(node->rhs);
-    if (node->lhs->kind == ND_VAR && node->lhs->var->is_local) {
-      pop("r0");
-      int reg = node->lhs->var->offset / 8;
-      fprintf(output, "    mov r%d, r0\n", reg);
-      push("r0");
-    } else if (node->lhs->kind == ND_VAR && !node->lhs->var->is_local) {
-      pop("r0");
-      fprintf(output, "    mov [_%s], r0\n", node->lhs->var->name);
-      push("r0");
-    } else if (node->lhs->kind == ND_DEREF) {
-      gen_expr(node->lhs->lhs); // evaluate pointer to stack
-      pop("r8"); // pointer
-      pop("r0"); // value
-      fprintf(output, "    mov [r8], r0\n");
-      push("r0");
-    }
+  case ND_MEMBER: {
+    gen_addr(node);
+    pop("r8");
+    fprintf(output, "    mov r0, [r8]\n");
+    push("r0");
+    return;
+  }
+  case ND_ADDR:
+    gen_addr(node->lhs);
     return;
   case ND_DEREF:
     gen_expr(node->lhs);
     pop("r8");
     fprintf(output, "    mov r0, [r8]\n");
     push("r0");
+    return;
+  case ND_ASSIGN:
+    if (node->lhs->kind == ND_VAR && node->lhs->var->is_local && node->lhs->var->offset < 32) {
+      gen_expr(node->rhs);
+      pop("r0");
+      int reg = node->lhs->var->offset / 8;
+      fprintf(output, "    mov r%d, r0\n", reg);
+      push("r0");
+    } else {
+      gen_addr(node->lhs);
+      gen_expr(node->rhs);
+      pop("r0");
+      pop("r8");
+      fprintf(output, "    mov [r8], r0\n");
+      push("r0");
+    }
     return;
   case ND_FUNCALL: {
     int nargs = 0;
@@ -113,9 +124,10 @@ static void gen_expr(Node *node) {
     
     if (node->lhs && node->lhs->kind == ND_VAR) {
         fprintf(output, "    call _%s\n", node->lhs->var->name);
-    } else {
-        // Fallback for function pointers or similar
+    } else if (node->func_ty && node->func_ty->name) {
         fprintf(output, "    call _%s\n", node->func_ty->name->str);
+    } else {
+        error_tok(node->tok, "unsupported function call");
     }
     push("r0");
     return;
@@ -125,6 +137,9 @@ static void gen_expr(Node *node) {
     return;
   case ND_ADD:
   case ND_SUB:
+  case ND_BITAND:
+  case ND_BITOR:
+  case ND_BITXOR:
   case ND_LT:
   case ND_LE:
   case ND_EQ:
@@ -135,41 +150,55 @@ static void gen_expr(Node *node) {
     pop("r0");
     
     if (node->kind == ND_ADD) {
+      if (node->ty->base) {
+         // Pointer arithmetic: r0 + r1 * size
+         fprintf(output, "    ; TODO: scale r1 by %d\n", node->ty->base->size);
+         if (node->ty->base->size > 1) {
+            // Very simple scaling for now
+            for (int i = 1; i < node->ty->base->size; i++) {
+                fprintf(output, "    add r0, r1\n");
+            }
+         }
+      }
       fprintf(output, "    add r0, r1\n");
     } else if (node->kind == ND_SUB) {
+      if (node->ty->base) {
+         fprintf(output, "    ; TODO: scale r1\n");
+      }
       fprintf(output, "    sub r0, r1\n");
+    } else if (node->kind == ND_BITAND) {
+      fprintf(output, "    and r0, r1\n");
+    } else if (node->kind == ND_BITOR) {
+      fprintf(output, "    or r0, r1\n");
+    } else if (node->kind == ND_BITXOR) {
+      fprintf(output, "    xor r0, r1\n");
     } else if (node->kind == ND_LT) {
+      int c = label_count++;
       fprintf(output, "    cmp r0, r1\n");
-      fprintf(output, "    jc L_%d\n", label_count);
+      fprintf(output, "    jc L_true_%d\n", c);
       fprintf(output, "    mov r0, 0\n");
-      fprintf(output, "    jmp L_%d\n", label_count+1);
-      fprintf(output, "L_%d:\n", label_count++);
+      fprintf(output, "    jmp L_done_%d\n", c);
+      fprintf(output, "L_true_%d:\n", c);
       fprintf(output, "    mov r0, 1\n");
-      fprintf(output, "L_%d:\n", label_count++);
-    } else if (node->kind == ND_LE) {
-      fprintf(output, "    cmp r1, r0\n");
-      fprintf(output, "    jc L_%d\n", label_count); // if r1 < r0 (so r0 > r1, false)
-      fprintf(output, "    mov r0, 1\n");
-      fprintf(output, "    jmp L_%d\n", label_count+1);
-      fprintf(output, "L_%d:\n", label_count++);
-      fprintf(output, "    mov r0, 0\n");
-      fprintf(output, ".L%d:\n", label_count++);
+      fprintf(output, "L_done_%d:\n", c);
     } else if (node->kind == ND_EQ) {
+      int c = label_count++;
       fprintf(output, "    cmp r0, r1\n");
-      fprintf(output, "    jz .L%d\n", label_count);
+      fprintf(output, "    jz L_true_%d\n", c);
       fprintf(output, "    mov r0, 0\n");
-      fprintf(output, "    jmp .L%d\n", label_count+1);
-      fprintf(output, ".L%d:\n", label_count++);
+      fprintf(output, "    jmp L_done_%d\n", c);
+      fprintf(output, "L_true_%d:\n", c);
       fprintf(output, "    mov r0, 1\n");
-      fprintf(output, ".L%d:\n", label_count++);
+      fprintf(output, "L_done_%d:\n", c);
     } else if (node->kind == ND_NE) {
+      int c = label_count++;
       fprintf(output, "    cmp r0, r1\n");
-      fprintf(output, "    jz .L%d\n", label_count);
-      fprintf(output, "    mov r0, 1\n");
-      fprintf(output, "    jmp .L%d\n", label_count+1);
-      fprintf(output, ".L%d:\n", label_count++);
+      fprintf(output, "    jnz L_true_%d\n", c);
       fprintf(output, "    mov r0, 0\n");
-      fprintf(output, ".L%d:\n", label_count++);
+      fprintf(output, "    jmp L_done_%d\n", c);
+      fprintf(output, "L_true_%d:\n", c);
+      fprintf(output, "    mov r0, 1\n");
+      fprintf(output, "L_done_%d:\n", c);
     }
     push("r0");
     return;
@@ -193,7 +222,7 @@ static void gen_stmt(Node *node) {
     return;
   case ND_EXPR_STMT:
     gen_expr(node->lhs);
-    pop("r0"); // discard result
+    pop("r0"); 
     return;
   case ND_IF: {
     int c = label_count++;
@@ -250,19 +279,20 @@ void codegen(Obj *prog, FILE *out) {
       fprintf(output, ".global _%s\n", fn->name);
       fprintf(output, "_%s:\n", fn->name);
       
-      int param_idx = 0;
-      for (Obj *var = fn->params; var; var = var->next) {
-        var->offset = param_idx * 8; 
-        param_idx++;
-      }
+      // Prologue: setup frame pointer
+      push("r14");
+      fprintf(output, "    mov r14, r15\n");
+      fprintf(output, "    sub r15, %d\n", fn->stack_size);
       
       gen_stmt(fn->body);
       
       fprintf(output, "L_return_%s:\n", fn->name);
+      // Epilogue
+      fprintf(output, "    mov r15, r14\n");
+      pop("r14");
       fprintf(output, "    ret\n");
       fprintf(output, "\n");
     } else {
-        // Global variables
         if (!strncmp(fn->name, ".L", 2)) continue;
         if (fn->is_tentative) continue;
 
@@ -278,7 +308,9 @@ void codegen(Obj *prog, FILE *out) {
              }
           }
         } else {
-          fprintf(output, "    .word 0\n"); // Just a placeholder word
+          for (int i = 0; i < fn->ty->size; i+=2) {
+              fprintf(output, "    .word 0\n");
+          }
         }
     }
   }

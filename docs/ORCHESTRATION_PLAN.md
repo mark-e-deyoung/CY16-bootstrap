@@ -44,7 +44,9 @@ graph TD
 ```
 
 ## 5. Execution Plan
-1.  **Now:** Write `.github/workflows/ci.yml` to run the validation ladder.
-2.  **Next:** Commit changes and prepare the repository for remote agents.
-3.  **Then:** Create the minimal C headers in the `include/` directory.
-4.  **Finally:** Invoke Google Jules using the local CLI to port the `cy16cc` backend in C.
+1.  **Done:** Write `.github/workflows/ci.yml` to run the validation ladder.
+2.  **Done:** Commit changes and prepare the repository for remote agents.
+3.  **Done:** Create the minimal C headers in the `include/` directory.
+4.  **Done:** Invoke Google Jules using the local CLI to port the `cy16cc` backend in C.
+5.  **In Progress:** Expand C backend with Phase 9 features (Structs, Arrays, Pointer Arithmetic).
+6.  **Next:** Validate Phase 9 features using the enhanced CI ladder.

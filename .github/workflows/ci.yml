@@ -25,22 +25,28 @@ jobs:
         pip install pycparser
         pip install -e .
 
-    - name: Run pytest
+    - name: Build C-based Compiler
+      run: |
+        make -C . CC=gcc
+
+    - name: Run Python-based Tests
       run: pytest -q
 
-    - name: Build Setup Stub
+    - name: Build and Run Setup Stub (Validation Anchor)
       run: |
         mkdir -p build
         cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000 --lst build/setup_stub.lst --map build/setup_stub.map
+        cy16-dis build/setup_stub.bin --base 0x1000
+        cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --dump 0xc03a
+        cy16-scanwrap build/setup_stub.bin build/setup_stub.scan 0x1000
+        cy16-scan-decode build/setup_stub.scan
 
-    - name: Disassemble Setup Stub
-      run: cy16-dis build/setup_stub.bin --base 0x1000
-
-    - name: Simulate Setup Stub
-      run: cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --dump 0xc03a
-
-    - name: Wrap Setup Stub into SCAN
-      run: cy16-scanwrap build/setup_stub.bin build/setup_stub.scan 0x1000
-
-    - name: Decode SCAN Image
-      run: cy16-scan-decode build/setup_stub.scan
+    - name: Verify C-based Compiler with Simulator
+      run: |
+        ./chibicc examples/c/write_memctl.c -S > build/write_memctl.s
+        cy16-as build/write_memctl.s -o build/write_memctl.bin --base 0x1000
+        # The function name is _write_memctl
+        # Find its address from map
+        cy16-as build/write_memctl.s -o build/write_memctl.bin --base 0x1000 --map build/write_memctl.map
+        ADDR=$(grep _write_memctl build/write_memctl.map | cut -d' ' -f1)
+        cy16-sim build/write_memctl.bin --base 0x1000 --pc 0x$ADDR --dump 0xc03a
