@@ -118,17 +118,55 @@ static void gen_expr(Node *node) {
       gen_expr(arg);
       nargs++;
     }
+    // Parameters are passed in r0, r1, r2, r3...
     for (int i = nargs - 1; i >= 0; i--) {
       pop(format("r%d", i));
     }
     
-    if (node->lhs && node->lhs->kind == ND_VAR) {
+    if (node->lhs->kind == ND_VAR) {
         fprintf(output, "    call _%s\n", node->lhs->var->name);
-    } else if (node->func_ty && node->func_ty->name) {
-        fprintf(output, "    call _%s\n", node->func_ty->name->str);
     } else {
-        error_tok(node->tok, "unsupported function call");
+        // Evaluate function address to r8 and call
+        gen_expr(node->lhs);
+        pop("r8");
+        fprintf(output, "    call [r8]\n");
     }
+    push("r0");
+    return;
+  }
+  case ND_LOGAND: {
+    int c = label_count++;
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_false_%d\n", c);
+    gen_expr(node->rhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jz L_false_%d\n", c);
+    fprintf(output, "    mov r0, 1\n");
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_false_%d:\n", c);
+    fprintf(output, "    mov r0, 0\n");
+    fprintf(output, "L_done_%d:\n", c);
+    push("r0");
+    return;
+  }
+  case ND_LOGOR: {
+    int c = label_count++;
+    gen_expr(node->lhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jnz L_true_%d\n", c);
+    gen_expr(node->rhs);
+    pop("r0");
+    fprintf(output, "    cmp r0, 0\n");
+    fprintf(output, "    jnz L_true_%d\n", c);
+    fprintf(output, "    mov r0, 0\n");
+    fprintf(output, "    jmp L_done_%d\n", c);
+    fprintf(output, "L_true_%d:\n", c);
+    fprintf(output, "    mov r0, 1\n");
+    fprintf(output, "L_done_%d:\n", c);
     push("r0");
     return;
   }
@@ -294,7 +332,6 @@ void codegen(Obj *prog, FILE *out) {
       fprintf(output, "\n");
     } else {
         if (!strncmp(fn->name, ".L", 2)) continue;
-        if (fn->is_tentative) continue;
 
         fprintf(output, ".global _%s\n", fn->name);
         fprintf(output, "_%s:\n", fn->name);
