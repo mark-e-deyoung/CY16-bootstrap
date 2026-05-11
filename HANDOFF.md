@@ -8,7 +8,7 @@ Date: 2026-05-11
 - Branch: `main`
 - Green baseline commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
 - Green GitHub Actions baseline before this handoff: `25635202946`
-- Latest green local validation: `docker build -t cy16-ladder .` with `19 passed`
+- Latest green local validation: `docker build -t cy16-ladder .` with `22 passed`
 - Local dirty file intentionally left untouched: `test.c`
 
 ## Completed in the last working session
@@ -18,6 +18,7 @@ Date: 2026-05-11
 - Scoped pytest discovery through `pyproject.toml`.
 - Updated CI to run a clean build and the corrected simulator invocation.
 - Merged PR #1 and confirmed the `main` push workflow passed.
+- Integrated the Phase 10 assembler/disassembler compatibility subset after review, covering `%rN` register spelling, stack forms, string directives, `.space`/`.skip`, `.bss`, `cy16-dis --gnupro`, docs, and tests.
 
 ## Delegation state
 
@@ -31,16 +32,15 @@ $env:HTTP_PROXY=''; $env:HTTPS_PROXY=''; $env:ALL_PROXY=''; $env:GIT_HTTP_PROXY=
 
 Active Jules results:
 
-- Phase 10 assembler/disassembler compatibility: session `2129117754108276796`, completed. Patch was pulled for review only and not applied.
+- Phase 10 assembler/disassembler compatibility: session `2129117754108276796`, completed. Compatible subset integrated locally and validated with Docker.
 - Phase 9 compiler follow-on: session `12196061178148043562`, awaiting user feedback. Patch was pulled for review only and not applied; it includes a generated `chibicc` binary change that should not be accepted blindly.
 
 ## Recommended next steps
 
 1. Keep `main` as the green baseline.
-2. Integrate the Phase 10 assembler/disassembler patch first, one patch only, then run `docker build -t cy16-ladder .`.
-3. Push and confirm GitHub Actions before moving to compiler changes.
-4. Review and rework the Phase 9 compiler patch separately. Exclude generated binaries unless they are intentionally rebuilt and justified.
-5. After local Docker and CI are green again, generate SCAN examples and resume DE2-115 HPI readback validation.
+2. Push and confirm GitHub Actions for the Phase 10 integration before moving to compiler changes.
+3. Review and rework the Phase 9 compiler patch separately. Exclude generated binaries unless they are intentionally rebuilt and justified.
+4. After local Docker and CI are green again, generate SCAN examples and resume DE2-115 HPI readback validation.
 
 ## Useful commands
 

@@ -8,11 +8,21 @@ This package includes a deliberately small assembler. It exists to prove the pro
 .org 0x1000
 .equ NAME, 0x1234
 .global symbol
+.globl symbol
 .section .text
+.text
+.data
+.bss
 .short 0x1234
 .word 0x1234
 .byte 0x12, 0x34
+.ascii "CY16"
+.asciz "CY16"
+.space 8
+.skip 8, 0xff
 ```
+
+`.bss` is accepted as a section marker. The bootstrap assembler emits a flat binary, so reserve explicit zero-filled bytes with `.space` or `.skip` when a binary image needs storage.
 
 ## Supported labels
 
@@ -25,7 +35,18 @@ _start:
 
 ```asm
 ret
+mov rN, immediate16
+mov rN, rM
+mov rN, [absolute_address]
+mov [absolute_address], rN
 mov [absolute_address], immediate16
+mov [r8] through [r15]
+mov [--r15], rN
+mov rN, [r15++]
+add, addc, sub, subb, cmp, and, test, or, xor
+shr, shl, ror, rol, addi, subi
+jmp, conditional jumps
+call, conditional calls
 ```
 
 The `mov [absolute_address], immediate16` form is currently implemented to match the Cypress `scanwrap.c` golden fixture:
@@ -41,13 +62,15 @@ Expected words:
 0x07e7 0x23b3 0xc03a 0xcf97
 ```
 
-## Next instructions to add
+## GNUPro compatibility conveniences
 
-1. `mov rN, imm`
-2. `mov rN, [addr]`
-3. `mov [addr], rN`
-4. `add`, `sub`, `cmp`
-5. `jmp`, conditional branches
-6. `call`
-7. `int`
-8. stack forms through R15
+Registers may be written as either `rN` or `%rN`. Indirect register forms also accept `%rN`, for example:
+
+```asm
+mov %r0, 0x1234
+mov [%r8], %r0
+mov [--%r15], %r0
+mov %r0, [%r15++]
+```
+
+`cy16-dis --gnupro` prints registers in `%rN` form.

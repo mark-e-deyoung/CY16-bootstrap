@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -40,9 +41,13 @@ def parse_source(source: str) -> list[Line]:
     return lines
 
 
+def _normalize_register_token(token: str) -> str:
+    return re.sub(r'%r([0-9]+)', r'r\1', token.lower().strip())
+
+
 def parse_operand(op: str) -> tuple[int, str | None]:
     """Returns (mode, expr_to_evaluate_for_extension_word_or_None)."""
-    low = op.lower().strip()
+    low = _normalize_register_token(op)
     if low.startswith('r') and low[1:].isdigit():
         reg = int(low[1:])
         if 0 <= reg <= 15:
@@ -50,7 +55,7 @@ def parse_operand(op: str) -> tuple[int, str | None]:
     if low == '[r15++]' or low == '[--r15]':
         return MODE_IND_R15, None
     if op.startswith('[') and op.endswith(']'):
-        inner = op[1:-1].strip().lower()
+        inner = _normalize_register_token(op[1:-1])
         if inner.startswith('r') and inner[1:].isdigit():
             reg = int(inner[1:])
             if 8 <= reg <= 15:
@@ -60,17 +65,67 @@ def parse_operand(op: str) -> tuple[int, str | None]:
     return MODE_IMM, op
 
 
+def parse_string_literal(token: str) -> bytes:
+    try:
+        value = ast.literal_eval(token)
+    except (SyntaxError, ValueError) as exc:
+        raise Cy16Error(f"invalid string literal: {token}") from exc
+    if not isinstance(value, str):
+        raise Cy16Error(f"expected string literal: {token}")
+    return value.encode("latin1")
+
+
+def directive_bytes(body: str, symbols: dict[str, int], pc: int) -> bytes:
+    op, _, rest = body.strip().partition(" ")
+    low = op.lower()
+    rest = rest.strip()
+    if low in {".ascii", ".asciz"}:
+        data = bytearray()
+        for item in split_operands(rest):
+            data.extend(parse_string_literal(item))
+        if low == ".asciz":
+            data.append(0)
+        return bytes(data)
+    if low in {".space", ".skip"}:
+        ops = split_operands(rest)
+        if not ops or len(ops) > 2:
+            raise Cy16Error(f"{op} requires count and optional fill byte")
+        count = eval_expr(ops[0], symbols, pc)
+        fill = eval_expr(ops[1], symbols, pc) & 0xFF if len(ops) == 2 else 0
+        if count < 0:
+            raise Cy16Error(f"{op} count must be non-negative")
+        return bytes([fill]) * count
+    raise Cy16Error(f"unsupported byte directive: {op}")
+
+
+def append_bytes_as_words(words: list[Word], pc: int, data: bytes, source: str) -> int:
+    start = pc
+    padded = data + (b"\x00" if len(data) & 1 else b"")
+    for i in range(0, len(padded), 2):
+        words.append(Word((start + i) & 0xFFFF, padded[i] | (padded[i + 1] << 8), source))
+    return (start + len(data)) & 0xFFFF
+
+
 def estimate_words(body: str) -> int:
     if not body:
         return 0
     low = body.strip().lower()
-    if low.startswith(('.org', '.equ', '.global', '.globl', '.section', '.include')):
+    if low.startswith(('.org', '.equ', '.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
         return 0
     if low.startswith(('.short', '.word')):
         return len(split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''))
     if low.startswith('.byte'):
         n = len(split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''))
         return (n + 1) // 2
+    if low.startswith(('.ascii', '.asciz')):
+        data = bytearray()
+        for item in split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''):
+            data.extend(parse_string_literal(item))
+        if low.startswith('.asciz'):
+            data.append(0)
+        return (len(data) + 1) // 2
+    if low.startswith(('.space', '.skip')):
+        return 0
     if low == 'ret':
         return 1
     
@@ -116,6 +171,12 @@ def first_pass(lines: list[Line], base: int) -> dict[str, int]:
             rest = body.split(None, 1)[1]
             name, expr = split_operands(rest)
             symbols[name] = eval_expr(expr, symbols, pc) & 0xFFFF
+            continue
+        if low.startswith(('.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
+            continue
+        if low.startswith(('.ascii', '.asciz', '.space', '.skip')):
+            pc = (pc + len(directive_bytes(body, symbols, pc))) & 0xFFFF
+            continue
         pc += estimate_words(body) * 2
         pc &= 0xFFFF
     return symbols
@@ -134,7 +195,7 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
         if low.startswith('.org'):
             pc = eval_expr(body.split(None, 1)[1], symbols, pc) & 0xFFFF
             continue
-        if low.startswith(('.equ', '.global', '.globl', '.section', '.include')):
+        if low.startswith(('.equ', '.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
             continue
         if low.startswith(('.short', '.word')):
             rest = body.split(None, 1)[1]
@@ -145,11 +206,10 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
         if low.startswith('.byte'):
             rest = body.split(None, 1)[1]
             vals = [eval_expr(expr, symbols, pc) & 0xFF for expr in split_operands(rest)]
-            if len(vals) & 1:
-                vals.append(0)
-            for i in range(0, len(vals), 2):
-                words.append(Word(pc, vals[i] | (vals[i+1] << 8), line.text))
-                pc = (pc + 2) & 0xFFFF
+            pc = append_bytes_as_words(words, pc, bytes(vals), line.text)
+            continue
+        if low.startswith(('.ascii', '.asciz', '.space', '.skip')):
+            pc = append_bytes_as_words(words, pc, directive_bytes(body, symbols, pc), line.text)
             continue
         if low == 'ret':
             words.append(Word(pc, RET_WORD, line.text))

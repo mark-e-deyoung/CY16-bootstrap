@@ -98,12 +98,24 @@ def _eval_node(node: ast.AST, symbols: dict[str, int]) -> int:
 
 
 def strip_comment(line: str) -> str:
-    in_quote = False
+    quote: str | None = None
+    escaped = False
     out = []
     for ch in line:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if quote and ch == '\\':
+            out.append(ch)
+            escaped = True
+            continue
         if ch in {'"', "'"}:
-            in_quote = not in_quote
-        if not in_quote and ch in {';', '#'}:
+            if quote == ch:
+                quote = None
+            elif quote is None:
+                quote = ch
+        if quote is None and ch in {';', '#'}:
             break
         out.append(ch)
     return ''.join(out).strip()
@@ -112,13 +124,28 @@ def strip_comment(line: str) -> str:
 def split_operands(text: str) -> list[str]:
     parts: list[str] = []
     depth = 0
+    quote: str | None = None
+    escaped = False
     cur = []
     for ch in text:
-        if ch in '([':
+        if escaped:
+            cur.append(ch)
+            escaped = False
+            continue
+        if quote and ch == '\\':
+            cur.append(ch)
+            escaped = True
+            continue
+        if ch in {'"', "'"}:
+            if quote == ch:
+                quote = None
+            elif quote is None:
+                quote = ch
+        if quote is None and ch in '([':
             depth += 1
-        elif ch in ')]':
+        elif quote is None and ch in ')]':
             depth -= 1
-        if ch == ',' and depth == 0:
+        if quote is None and ch == ',' and depth == 0:
             parts.append(''.join(cur).strip())
             cur = []
         else:

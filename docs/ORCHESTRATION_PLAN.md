@@ -17,7 +17,7 @@ Latest local verification:
 docker build -t cy16-ladder .
 ```
 
-Result: `19 passed` in the Python test suite, setup-stub disassembly/simulation ran, and the image built successfully.
+Result: `22 passed` in the Python test suite, setup-stub disassembly/simulation ran, and the image built successfully.
 
 GitHub Actions validation:
 
@@ -129,7 +129,7 @@ graph TD
 
 ## Active Jules sessions
 
-- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`Completed` as of latest poll). A patch was pulled for review only and was not applied. It adds GNUPro-flavored assembler/disassembler support such as `%rN` spelling, stack forms, string directives, `.space`/`.skip`, `.bss`, docs, and tests.
+- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`Completed` as of latest poll). The compatible subset has been locally reviewed, integrated, and validated: `%rN` spelling, stack forms, string directives, `.space`/`.skip`, `.bss` section markers, docs, and tests.
 - Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Awaiting User Feedback` as of latest poll). A patch was pulled for review only and was not applied. It includes switch/case work and a generated `chibicc` binary change; that binary change must be excluded or regenerated intentionally before integration.
 
 Older Jules sessions remain in the account but should be treated as superseded unless their exact diff is intentionally reviewed. These sessions were created against `mark-e-deyoung/CY16-bootstrap`, not the uncommitted local workspace. Integrate one session at a time on top of green `main`.
@@ -137,7 +137,6 @@ Older Jules sessions remain in the account but should be treated as superseded u
 ## Recommended next actions
 
 1. Keep `main` as the green baseline and do not include the local `test.c` scratch change in handoff commits.
-2. Review and integrate the Phase 10 assembler/disassembler patch first because it is isolated to `src/cy16boot`, docs, and tests.
-3. Rerun `docker build -t cy16-ladder .`, push, and confirm GitHub Actions after the Phase 10 integration.
-4. Review and rework the Phase 9 compiler patch separately. Exclude the generated `chibicc` binary unless it is intentionally rebuilt and justified.
-5. Rerun the full ladder after Phase 9, then generate SCAN examples and move to DE2-115 HPI readback validation.
+2. Push and confirm GitHub Actions for the integrated Phase 10 assembler/disassembler compatibility work.
+3. Review and rework the Phase 9 compiler patch separately. Exclude the generated `chibicc` binary unless it is intentionally rebuilt and justified.
+4. Rerun the full ladder after Phase 9, then generate SCAN examples and move to DE2-115 HPI readback validation.
