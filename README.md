@@ -28,7 +28,7 @@ As of 2026-05-11, `main` is the green integration baseline at merge commit `e841
 
 - Local Docker validation command: `docker build -t cy16-ladder .`
 - Last green local result: `19 passed`
-- Last green GitHub Actions run on `main`: `25635202946`
+- Green GitHub Actions baseline before this handoff: `25635202946`
 - Current handoff notes: `HANDOFF.md`
 - Bring-up sequencing and delegation plan: `docs/ORCHESTRATION_PLAN.md`
 

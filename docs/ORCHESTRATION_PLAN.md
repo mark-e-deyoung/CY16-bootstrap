@@ -24,7 +24,7 @@ GitHub Actions validation:
 - PR: https://github.com/mark-e-deyoung/CY16-bootstrap/pull/1
 - Branch: `main`
 - Merge commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
-- Latest run: `25635202946`
+- Green baseline run before this handoff: `25635202946`
 - Result: success
 
 ## Completed in this orchestration pass

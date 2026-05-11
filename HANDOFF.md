@@ -7,7 +7,7 @@ Date: 2026-05-11
 - Repository: `mark-e-deyoung/CY16-bootstrap`
 - Branch: `main`
 - Green baseline commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
-- Latest green GitHub Actions run on `main`: `25635202946`
+- Green GitHub Actions baseline before this handoff: `25635202946`
 - Latest green local validation: `docker build -t cy16-ladder .` with `19 passed`
 - Local dirty file intentionally left untouched: `test.c`
 
