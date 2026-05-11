@@ -23,8 +23,8 @@ GitHub Actions validation:
 
 - PR: https://github.com/mark-e-deyoung/CY16-bootstrap/pull/1
 - Branch: `main`
-- Merge commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
-- Green baseline run before this handoff: `25635202946`
+- Current baseline commit: `50e642a`
+- Current green run: `25679773430`
 - Result: success
 
 ## Completed in this orchestration pass
@@ -137,6 +137,7 @@ Older Jules sessions remain in the account but should be treated as superseded u
 ## Recommended next actions
 
 1. Keep `main` as the green baseline and do not include the local `test.c` scratch change in handoff commits.
-2. Push and confirm GitHub Actions for the integrated Phase 10 assembler/disassembler compatibility work.
-3. Continue Phase 9 with static locals, function pointers, interrupt attributes, inline assembly, and peephole cleanup as separate changes.
-4. Rerun the full ladder after each Phase 9 feature, then generate SCAN examples and move to DE2-115 HPI readback validation.
+2. Implement Phase 9 static locals next, with simulator-backed persistence tests across multiple calls.
+3. Rerun the full ladder after each Phase 9 feature, then generate SCAN examples and move to DE2-115 HPI readback validation.
+
+After static locals are green, continue Phase 9 with function pointers, interrupt attributes, inline assembly, and peephole cleanup as separate changes.

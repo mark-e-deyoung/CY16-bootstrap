@@ -24,11 +24,12 @@ Expected CY16 words:
 
 ## Current status
 
-As of 2026-05-11, `main` is the green integration baseline at merge commit `e8414ff208d7384368ebd7baa684e75b5732e17a`.
+As of 2026-05-11, `main` is the green integration baseline at commit `50e642a`.
 
 - Local Docker validation command: `docker build -t cy16-ladder .`
 - Last green local result: `23 passed`
-- Green GitHub Actions baseline before this handoff: `25635202946`
+- Last green GitHub Actions run on `main`: `25679773430`
+- Next bring-up rung: Phase 9 static locals
 - Current handoff notes: `HANDOFF.md`
 - Bring-up sequencing and delegation plan: `docs/ORCHESTRATION_PLAN.md`
 

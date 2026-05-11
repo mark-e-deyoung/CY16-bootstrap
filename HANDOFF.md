@@ -6,8 +6,8 @@ Date: 2026-05-11
 
 - Repository: `mark-e-deyoung/CY16-bootstrap`
 - Branch: `main`
-- Green baseline commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
-- Green GitHub Actions baseline before this handoff: `25635202946`
+- Green baseline commit: `50e642a`
+- Green GitHub Actions run: `25679773430`
 - Latest green local validation: `docker build -t cy16-ladder .` with `23 passed`
 - Local dirty file intentionally left untouched: `test.c`
 
@@ -39,8 +39,8 @@ Active Jules results:
 ## Recommended next steps
 
 1. Keep `main` as the green baseline.
-2. Push and confirm GitHub Actions for the Phase 10 integration before moving to compiler changes.
-3. Continue Phase 9 with static locals, function pointers, interrupt attributes, inline assembly, and peephole cleanup as separate changes.
+2. Implement Phase 9 static locals next, with simulator-backed persistence tests across multiple calls.
+3. After static locals are green, continue Phase 9 with function pointers, interrupt attributes, inline assembly, and peephole cleanup as separate changes.
 4. After local Docker and CI are green again, generate SCAN examples and resume DE2-115 HPI readback validation.
 
 ## Useful commands
