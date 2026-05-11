@@ -1,11 +1,13 @@
 # CY16 Bring-Up Orchestration Plan
 
+Last updated: 2026-05-11
+
 ## Current status
 
 Milestones 1 through 8 are complete enough for the current bring-up ladder:
 
 - Assembler, disassembler, simulator, and SCAN tools exist and have golden tests.
-- The chibicc-derived CY16 backend emits assembly for the v0 subset.
+- The chibicc-derived CY16 backend emits assembly for the v0 subset plus the validated Phase 9 baseline for structs, arrays, and pointer arithmetic.
 - Minimal headers, libcy16 seeds, and DE2-115 handoff documentation are present.
 - Docker now builds the Linux validation image and runs the current validation ladder successfully.
 
@@ -20,8 +22,9 @@ Result: `19 passed` in the Python test suite, setup-stub disassembly/simulation 
 GitHub Actions validation:
 
 - PR: https://github.com/mark-e-deyoung/CY16-bootstrap/pull/1
-- Branch: `codex-bringup-ladder-fix`
-- Latest run: `25634928788`
+- Branch: `main`
+- Merge commit: `e8414ff208d7384368ebd7baa684e75b5732e17a`
+- Latest run: `25635202946`
 - Result: success
 
 ## Completed in this orchestration pass
@@ -126,14 +129,15 @@ graph TD
 
 ## Active Jules sessions
 
-- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Planning` as of latest poll)
-- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`In Progress` as of latest poll)
+- Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`Completed` as of latest poll). A patch was pulled for review only and was not applied. It adds GNUPro-flavored assembler/disassembler support such as `%rN` spelling, stack forms, string directives, `.space`/`.skip`, `.bss`, docs, and tests.
+- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Awaiting User Feedback` as of latest poll). A patch was pulled for review only and was not applied. It includes switch/case work and a generated `chibicc` binary change; that binary change must be excluded or regenerated intentionally before integration.
 
-These sessions were created against `mark-e-deyoung/CY16-bootstrap`, not the uncommitted local workspace. Integrate them only after preserving or committing the local ladder fix in `src/cy16cc/cy16_codegen.c`.
+Older Jules sessions remain in the account but should be treated as superseded unless their exact diff is intentionally reviewed. These sessions were created against `mark-e-deyoung/CY16-bootstrap`, not the uncommitted local workspace. Integrate one session at a time on top of green `main`.
 
 ## Recommended next actions
 
-1. Merge PR #1 after review, or keep it open as the integration baseline for Jules results.
-2. Monitor the active Jules sessions listed above.
-3. Pull and integrate Jules results sequentially, rerunning `docker build -t cy16-ladder .` after each.
-4. Once CI and local Docker are green, generate SCAN examples and move to DE2-115 HPI readback validation.
+1. Keep `main` as the green baseline and do not include the local `test.c` scratch change in handoff commits.
+2. Review and integrate the Phase 10 assembler/disassembler patch first because it is isolated to `src/cy16boot`, docs, and tests.
+3. Rerun `docker build -t cy16-ladder .`, push, and confirm GitHub Actions after the Phase 10 integration.
+4. Review and rework the Phase 9 compiler patch separately. Exclude the generated `chibicc` binary unless it is intentionally rebuilt and justified.
+5. Rerun the full ladder after Phase 9, then generate SCAN examples and move to DE2-115 HPI readback validation.

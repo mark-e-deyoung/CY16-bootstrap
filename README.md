@@ -22,6 +22,16 @@ Expected CY16 words:
 0x07e7 0x23b3 0xc03a 0xcf97
 ```
 
+## Current status
+
+As of 2026-05-11, `main` is the green integration baseline at merge commit `e8414ff208d7384368ebd7baa684e75b5732e17a`.
+
+- Local Docker validation command: `docker build -t cy16-ladder .`
+- Last green local result: `19 passed`
+- Last green GitHub Actions run on `main`: `25635202946`
+- Current handoff notes: `HANDOFF.md`
+- Bring-up sequencing and delegation plan: `docs/ORCHESTRATION_PLAN.md`
+
 ## Quick start
 
 ```bash
@@ -48,7 +58,7 @@ cy16-scan-decode build/setup_stub.scan
 - `docs/SCAN_FORMAT.md` — SCAN record model.
 - `prompts/AGENT_BOOTSTRAP_PROMPT.md` — one-shot prompt for Codex CLI, Gemini CLI, or Jules.
 - `src/cy16boot/` — bootstrap Python tools.
-- `src/cy16cc/` — placeholder for the eventual chibicc-derived compiler port.
+- `src/cy16cc/` — chibicc-derived compiler port and CY16 backend.
 - `libcy16/` — startup/runtime/linker-script seed files.
 - `scripts/vendor_chibicc.sh` — pins and vendors chibicc.
 - `tests/` — pytest tests.
