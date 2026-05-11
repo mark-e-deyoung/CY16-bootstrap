@@ -417,6 +417,37 @@ static void gen_stmt(Node *node) {
     }
     return;
   }
+  case ND_SWITCH: {
+    gen_expr(node->cond);
+    pop("r1");
+
+    for (Node *n = node->case_next; n; n = n->case_next) {
+      if (n->begin != n->end)
+        error_tok(n->tok, "CY16 switch case ranges are not yet implemented");
+      fprintf(output, "    cmp r1, %ld\n", n->begin);
+      fprintf(output, "    jz %s\n", n->label);
+    }
+
+    if (node->default_case)
+      fprintf(output, "    jmp %s\n", node->default_case->label);
+    else
+      fprintf(output, "    jmp %s\n", node->brk_label);
+
+    gen_stmt(node->then);
+    fprintf(output, "%s:\n", node->brk_label);
+    return;
+  }
+  case ND_CASE:
+    fprintf(output, "%s:\n", node->label);
+    gen_stmt(node->lhs);
+    return;
+  case ND_GOTO:
+    fprintf(output, "    jmp %s\n", node->unique_label);
+    return;
+  case ND_LABEL:
+    fprintf(output, "%s:\n", node->unique_label);
+    gen_stmt(node->lhs);
+    return;
   case ND_FOR: {
     int c = label_count++;
     if (node->init)
@@ -446,17 +477,18 @@ static void assign_lvar_offsets(Obj *prog) {
   for (Obj *fn = prog; fn; fn = fn->next) {
     if (!fn->is_function) continue;
     
+    int offset = 0;
     int gp = 0;
     for (Obj *var = fn->params; var; var = var->next) {
-      if (gp < 8) {
-        var->offset = gp * 2;
-        gp++;
-      } else {
+      if (gp >= 8) {
         error_tok(var->tok, "too many parameters for CY16 v0");
       }
+      offset += var->ty->size;
+      offset = align_to(offset, var->ty->align);
+      var->offset = -offset;
+      gp++;
     }
     
-    int offset = 0;
     for (Obj *var = fn->locals; var; var = var->next) {
       if (is_param_obj(fn, var))
         continue;
@@ -484,6 +516,13 @@ void codegen(Obj *prog, FILE *out) {
       fprintf(output, "    mov r14, r15\n");
       if (fn->stack_size > 0) {
         fprintf(output, "    sub r15, %d\n", fn->stack_size);
+      }
+
+      int param_reg = 0;
+      for (Obj *var = fn->params; var; var = var->next) {
+        fprintf(output, "    mov r8, r14\n");
+        fprintf(output, "    sub r8, %d\n", -var->offset);
+        fprintf(output, "    mov [r8], r%d\n", param_reg++);
       }
       
       gen_stmt(fn->body);

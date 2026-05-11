@@ -7,7 +7,7 @@ Last updated: 2026-05-11
 Milestones 1 through 8 are complete enough for the current bring-up ladder:
 
 - Assembler, disassembler, simulator, and SCAN tools exist and have golden tests.
-- The chibicc-derived CY16 backend emits assembly for the v0 subset plus the validated Phase 9 baseline for structs, arrays, and pointer arithmetic.
+- The chibicc-derived CY16 backend emits assembly for the v0 subset plus the validated Phase 9 baseline for structs, arrays, pointer arithmetic, switch/case, and spilled parameter registers.
 - Minimal headers, libcy16 seeds, and DE2-115 handoff documentation are present.
 - Docker now builds the Linux validation image and runs the current validation ladder successfully.
 
@@ -17,7 +17,7 @@ Latest local verification:
 docker build -t cy16-ladder .
 ```
 
-Result: `22 passed` in the Python test suite, setup-stub disassembly/simulation ran, and the image built successfully.
+Result: `23 passed` in the Python test suite, setup-stub disassembly/simulation ran, and the image built successfully.
 
 GitHub Actions validation:
 
@@ -130,7 +130,7 @@ graph TD
 ## Active Jules sessions
 
 - Phase 10 assembler/disassembler compatibility: https://jules.google.com/session/2129117754108276796 (`Completed` as of latest poll). The compatible subset has been locally reviewed, integrated, and validated: `%rN` spelling, stack forms, string directives, `.space`/`.skip`, `.bss` section markers, docs, and tests.
-- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Awaiting User Feedback` as of latest poll). A patch was pulled for review only and was not applied. It includes switch/case work and a generated `chibicc` binary change; that binary change must be excluded or regenerated intentionally before integration.
+- Phase 9 compiler follow-on: https://jules.google.com/session/12196061178148043562 (`Awaiting User Feedback` as of latest poll). The pulled patch was not applied because it included a generated `chibicc` binary patch. The useful switch/case work was reimplemented locally with simulator-backed tests.
 
 Older Jules sessions remain in the account but should be treated as superseded unless their exact diff is intentionally reviewed. These sessions were created against `mark-e-deyoung/CY16-bootstrap`, not the uncommitted local workspace. Integrate one session at a time on top of green `main`.
 
@@ -138,5 +138,5 @@ Older Jules sessions remain in the account but should be treated as superseded u
 
 1. Keep `main` as the green baseline and do not include the local `test.c` scratch change in handoff commits.
 2. Push and confirm GitHub Actions for the integrated Phase 10 assembler/disassembler compatibility work.
-3. Review and rework the Phase 9 compiler patch separately. Exclude the generated `chibicc` binary unless it is intentionally rebuilt and justified.
-4. Rerun the full ladder after Phase 9, then generate SCAN examples and move to DE2-115 HPI readback validation.
+3. Continue Phase 9 with static locals, function pointers, interrupt attributes, inline assembly, and peephole cleanup as separate changes.
+4. Rerun the full ladder after each Phase 9 feature, then generate SCAN examples and move to DE2-115 HPI readback validation.

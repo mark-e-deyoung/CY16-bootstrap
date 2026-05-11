@@ -66,6 +66,8 @@ def eval_expr(expr: str, symbols: dict[str, int] | None = None, current_addr: in
     expr = expr.strip()
     if not expr:
         raise Cy16Error("empty expression")
+    if expr in symbols:
+        return symbols[expr] & 0xFFFFFFFF
     # Accept common assembler hex suffix such as 1234h.
     tokens = []
     for tok in expr.replace('(', ' ( ').replace(')', ' ) ').replace(',', ' , ').split():

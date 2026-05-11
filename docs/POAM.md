@@ -6,7 +6,7 @@ Implement a CY16 C compiler by using chibicc as a frontend seed and replacing it
 
 ## Current phase status
 
-As of 2026-05-11, Phases 0 through 8 are complete enough for the active bring-up ladder. Phase 9 is in progress: structs as memory objects, arrays, pointer arithmetic, selected expression nodes, and volatile MMIO paths have simulator-backed validation in the Docker ladder. The next Phase 9 items are `switch/case`, static locals, function pointers, interrupt attributes, inline assembly, and peephole cleanup.
+As of 2026-05-11, Phases 0 through 8 are complete enough for the active bring-up ladder. Phase 9 is in progress: structs as memory objects, arrays, pointer arithmetic, `switch/case`, selected expression nodes, spilled parameter registers, and volatile MMIO paths have simulator-backed validation in the Docker ladder. The next Phase 9 items are static locals, function pointers, interrupt attributes, inline assembly, and peephole cleanup.
 
 Phase 10 assembler/disassembler compatibility has an integrated baseline for `%rN` register spelling, stack forms, string directives, `.space`/`.skip`, `.bss` section markers, docs, and tests. Broader GNUPro object and listing compatibility remains future work.
 
