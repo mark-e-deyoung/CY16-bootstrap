@@ -1,0 +1,58 @@
+name: CY16 Directive Layout
+
+on:
+  pull_request:
+    paths:
+      - 'src/cy16boot/asm.py'
+      - 'tests/test_directive_layout.py'
+      - 'docs/ASSEMBLER_BYTE_DIRECTIVES.md'
+      - '.github/workflows/directive-layout.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/cy16boot/asm.py'
+      - 'tests/test_directive_layout.py'
+      - 'docs/ASSEMBLER_BYTE_DIRECTIVES.md'
+      - '.github/workflows/directive-layout.yml'
+
+jobs:
+  directive-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pycparser
+          pip install -e .
+      - name: Build C compiler required by full validation
+        run: |
+          make clean
+          make CC=gcc
+      - name: Run complete test suite
+        run: pytest -q
+      - name: Exercise odd-directive CLI output
+        run: |
+          mkdir -p build/directive-layout
+          cat > build/directive-layout/layout.s <<'ASM'
+          .org 0x1000
+          .byte 0xaa
+          next:
+              ret
+          ASM
+          cy16-as build/directive-layout/layout.s \
+            -o build/directive-layout/layout.bin \
+            --lst build/directive-layout/layout.lst \
+            --map build/directive-layout/layout.map
+          python - <<'PY'
+          from pathlib import Path
+          image = Path('build/directive-layout/layout.bin').read_bytes()
+          listing = Path('build/directive-layout/layout.lst').read_text()
+          symbols = Path('build/directive-layout/layout.map').read_text()
+          assert image[:2] == b'\xaa\x00'
+          assert '1002:' in listing
+          assert '1002 next' in symbols
+          PY
