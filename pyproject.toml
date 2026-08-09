@@ -17,6 +17,7 @@ cy16-dis = "cy16boot.dis:main"
 cy16-sim = "cy16boot.sim:main"
 cy16-scan-decode = "cy16boot.scan:decode_main"
 cy16-scanwrap = "cy16boot.scan:wrap_main"
+cy16-artifact-scan = "cy16boot.artifact_scan:main"
 cy16-cc-mini = "cy16boot.ccmini:main"
 cy16-cc = "cy16cc.main:main"
 
