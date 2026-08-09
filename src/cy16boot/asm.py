@@ -75,6 +75,13 @@ def parse_string_literal(token: str) -> bytes:
     return value.encode("latin1")
 
 
+def word_padded_byte_length(length: int) -> int:
+    """Return the bytes occupied by a byte directive in this word assembler."""
+    if length < 0:
+        raise Cy16Error("byte-directive length must be non-negative")
+    return (length + 1) & ~1
+
+
 def directive_bytes(body: str, symbols: dict[str, int], pc: int) -> bytes:
     op, _, rest = body.strip().partition(" ")
     low = op.lower()
@@ -103,7 +110,7 @@ def append_bytes_as_words(words: list[Word], pc: int, data: bytes, source: str) 
     padded = data + (b"\x00" if len(data) & 1 else b"")
     for i in range(0, len(padded), 2):
         words.append(Word((start + i) & 0xFFFF, padded[i] | (padded[i + 1] << 8), source))
-    return (start + len(data)) & 0xFFFF
+    return (start + len(padded)) & 0xFFFF
 
 
 def estimate_words(body: str) -> int:
@@ -116,14 +123,14 @@ def estimate_words(body: str) -> int:
         return len(split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''))
     if low.startswith('.byte'):
         n = len(split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''))
-        return (n + 1) // 2
+        return word_padded_byte_length(n) // 2
     if low.startswith(('.ascii', '.asciz')):
         data = bytearray()
         for item in split_operands(body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''):
             data.extend(parse_string_literal(item))
         if low.startswith('.asciz'):
             data.append(0)
-        return (len(data) + 1) // 2
+        return word_padded_byte_length(len(data)) // 2
     if low.startswith(('.space', '.skip')):
         return 0
     if low == 'ret':
@@ -175,7 +182,8 @@ def first_pass(lines: list[Line], base: int) -> dict[str, int]:
         if low.startswith(('.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
             continue
         if low.startswith(('.ascii', '.asciz', '.space', '.skip')):
-            pc = (pc + len(directive_bytes(body, symbols, pc))) & 0xFFFF
+            data = directive_bytes(body, symbols, pc)
+            pc = (pc + word_padded_byte_length(len(data))) & 0xFFFF
             continue
         pc += estimate_words(body) * 2
         pc &= 0xFFFF
