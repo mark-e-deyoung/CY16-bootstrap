@@ -1,0 +1,113 @@
+name: CY16 Legacy Artifact Scanner
+
+on:
+  pull_request:
+    paths:
+      - 'src/cy16boot/artifact_scan.py'
+      - 'tests/test_artifact_scan.py'
+      - 'spec/cy16-legacy-artifact-scan-v1.schema.json'
+      - 'docs/LEGACY_ARTIFACT_SCAN.md'
+      - 'docs/ARTIFACT_RECOVERY_LOG_*.md'
+      - 'pyproject.toml'
+      - '.github/workflows/legacy-artifact-scan.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/cy16boot/artifact_scan.py'
+      - 'tests/test_artifact_scan.py'
+      - 'spec/cy16-legacy-artifact-scan-v1.schema.json'
+      - 'pyproject.toml'
+      - '.github/workflows/legacy-artifact-scan.yml'
+
+jobs:
+  scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pycparser
+          pip install -e .
+      - name: Build C-based compiler required by the full test ladder
+        run: |
+          make clean
+          make CC=gcc
+      - name: Run full validation suite
+        run: pytest -q
+      - name: Build synthetic legacy-media tree
+        run: |
+          python - <<'PY'
+          import io
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          root = Path('build/legacy-media')
+          source = root / 'Cypress' / 'USB' / 'OTG-Host' / 'Common'
+          source.mkdir(parents=True, exist_ok=True)
+          (source / 'ISRS.S').write_text(
+              'COMM_CTRL_REG_ADDR equ 01BAh\nHUSB_SIE1_INIT_INT equ 0072h\n',
+              encoding='ascii',
+          )
+
+          with zipfile.ZipFile(root / 'course-media.zip', 'w') as archive:
+              archive.writestr(
+                  'Source/coprocessor/linux/drivers/usb/cy7c67300/'
+                  'usbd/dedev/de1_bios.asm',
+                  'HUSB_RESET_INT\nDEFAULT_EOT\n',
+              )
+
+          payload = b'MAX_FRAME_BW\nCOMM_WRITE_CTRL_REG\n'
+          with tarfile.open(root / 'board-support.tar.gz', 'w:gz') as archive:
+              info = tarfile.TarInfo(
+                  'Source/coprocessor/de_app/cy7c67200_300_hcd_simple.c'
+              )
+              info.size = len(payload)
+              archive.addfile(info, io.BytesIO(payload))
+          PY
+      - name: Run installed scanner CLI
+        run: |
+          cy16-artifact-scan \
+            build/legacy-media \
+            -o build/legacy-artifact-report.json \
+            --content
+      - name: Validate report identity and expected fingerprints
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          schema = json.loads(
+              Path('spec/cy16-legacy-artifact-scan-v1.schema.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          assert schema['$schema'] == 'https://json-schema.org/draft/2020-12/schema'
+          assert schema['properties']['schema']['const'] == 'cy16-legacy-artifact-scan/v1'
+          assert schema['properties']['schema_version']['const'] == 1
+
+          report = json.loads(
+              Path('build/legacy-artifact-report.json').read_text(encoding='utf-8')
+          )
+          assert report['schema'] == 'cy16-legacy-artifact-scan/v1'
+          assert report['schema_version'] == 1
+          assert report['summary']['errors'] == 0
+          assert report['summary']['archives_inspected'] == 2
+          found = {item['fingerprint'] for item in report['matches']}
+          required = {
+              'ISRS.S',
+              'COMM_CTRL_REG_ADDR',
+              'HUSB_SIE1_INIT_INT',
+              'de1_bios.asm',
+              'HUSB_RESET_INT',
+              'DEFAULT_EOT',
+              'cy7c67200_300_hcd_simple.c',
+              'MAX_FRAME_BW',
+              'COMM_WRITE_CTRL_REG',
+          }
+          assert required <= found, sorted(required - found)
+          PY
