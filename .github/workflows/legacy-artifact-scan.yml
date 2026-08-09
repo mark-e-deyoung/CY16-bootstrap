@@ -4,9 +4,9 @@ on:
   pull_request:
     paths:
       - 'src/cy16boot/artifact_scan.py'
-      - 'tests/test_artifact_scan.py'
+      - 'tests/test_artifact_scan*.py'
       - 'spec/cy16-legacy-artifact-scan-v1.schema.json'
-      - 'docs/LEGACY_ARTIFACT_SCAN.md'
+      - 'docs/LEGACY_ARTIFACT_SCAN*.md'
       - 'docs/ARTIFACT_RECOVERY_LOG_*.md'
       - 'pyproject.toml'
       - '.github/workflows/legacy-artifact-scan.yml'
@@ -14,8 +14,9 @@ on:
     branches: [main]
     paths:
       - 'src/cy16boot/artifact_scan.py'
-      - 'tests/test_artifact_scan.py'
+      - 'tests/test_artifact_scan*.py'
       - 'spec/cy16-legacy-artifact-scan-v1.schema.json'
+      - 'docs/LEGACY_ARTIFACT_SCAN*.md'
       - 'pyproject.toml'
       - '.github/workflows/legacy-artifact-scan.yml'
 
@@ -38,6 +39,8 @@ jobs:
           make CC=gcc
       - name: Run full validation suite
         run: pytest -q
+      - name: Run focused containment and budget tests
+        run: pytest -q tests/test_artifact_scan_safety.py
       - name: Build synthetic legacy-media tree
         run: |
           python - <<'PY'
@@ -74,8 +77,10 @@ jobs:
           cy16-artifact-scan \
             build/legacy-media \
             -o build/legacy-artifact-report.json \
-            --content
-      - name: Validate report identity and expected fingerprints
+            --content \
+            --archive-max-members 1000 \
+            --archive-max-read-bytes 1048576
+      - name: Validate report identity, completeness, and fingerprints
         run: |
           python - <<'PY'
           import json
@@ -95,8 +100,12 @@ jobs:
           )
           assert report['schema'] == 'cy16-legacy-artifact-scan/v1'
           assert report['schema_version'] == 1
+          assert report['scanner']['follow_symlinks'] is False
+          assert report['scanner']['archive_max_members'] == 1000
+          assert report['scanner']['archive_max_read_bytes'] == 1048576
           assert report['summary']['errors'] == 0
           assert report['summary']['archives_inspected'] == 2
+          assert report['summary']['archives_incomplete'] == 0
           found = {item['fingerprint'] for item in report['matches']}
           required = {
               'ISRS.S',
