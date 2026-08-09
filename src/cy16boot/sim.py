@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from dataclasses import dataclass, field
 
-from .common import le_to_word, read_bytes, word_to_le
+from .common import read_bytes, word_to_le
 from .isa import (
     RET_WORD, MODE_IMM, MODE_DIR_W, MODE_IND_R15, is_reg_mode, get_reg_from_mode,
     ALU_NAMES, OP_JMP_RET_PREFIX, OP_CALL_PREFIX, COND_ALWAYS,
     is_ind_reg_mode, get_ind_reg_from_mode,
     OP_SPECIAL_PREFIX, SPECIAL_NAMES,
     COND_Z, COND_NZ, COND_C, COND_NC, COND_S, COND_NS, COND_O, COND_NO,
-    COND_A, COND_BE, COND_G, COND_GE, COND_L, COND_LE
+    COND_A, COND_BE, COND_G, COND_GE, COND_L, COND_LE,
+    decode_jmp_rel_offset, is_int_word,
 )
 
 
@@ -23,7 +23,6 @@ class CPU:
     halted: bool = False
     steps: int = 0
 
-    # Flags modeled by the current simulator.
     fz: bool = False
     fc: bool = False
     fs: bool = False
@@ -36,9 +35,9 @@ class CPU:
         return self.memory[addr & 0xFFFF] | (self.memory[(addr + 1) & 0xFFFF] << 8)
 
     def writew(self, addr: int, value: int) -> None:
-        b = word_to_le(value)
-        self.memory[addr & 0xFFFF] = b[0]
-        self.memory[(addr + 1) & 0xFFFF] = b[1]
+        data = word_to_le(value)
+        self.memory[addr & 0xFFFF] = data[0]
+        self.memory[(addr + 1) & 0xFFFF] = data[1]
 
     @staticmethod
     def _signed16(value: int) -> int:
@@ -65,7 +64,6 @@ class CPU:
         self.fo = signed_total < -0x8000 or signed_total > 0x7FFF
 
     def _set_shift_flags(self, result: int, carry: int) -> None:
-        # SHR/SHL/ROR/ROL affect Z, C, and S. Overflow is preserved.
         self._set_zs(result)
         self.fc = bool(carry)
 
@@ -80,16 +78,14 @@ class CPU:
         if mode == MODE_DIR_W:
             addr = self.readw(self.pc)
             self.pc = (self.pc + 2) & 0xFFFF
-            val = self.readw(addr)
-            return val, f"[0x{addr:04x}]"
+            return self.readw(addr), f"[0x{addr:04x}]"
         if mode == MODE_IND_R15:
             val = self.readw(self.regs[15])
             self.regs[15] = (self.regs[15] + 2) & 0xFFFF
             return val, "[r15++]"
         if is_ind_reg_mode(mode):
             reg = get_ind_reg_from_mode(mode)
-            val = self.readw(self.regs[reg])
-            return val, f"[r{reg}]"
+            return self.readw(self.regs[reg]), f"[r{reg}]"
         raise RuntimeError(f"unsupported src mode: {mode}")
 
     def set_op_val(self, mode: int, val: int) -> str:
@@ -148,8 +144,9 @@ class CPU:
 
     def step(self) -> str:
         pc0 = self.pc
-        w = self.readw(self.pc)
-        if w == RET_WORD:
+        word = self.readw(self.pc)
+
+        if word == RET_WORD:
             self.pc = self.readw(self.regs[15])
             self.regs[15] = (self.regs[15] + 2) & 0xFFFF
             self.steps += 1
@@ -157,11 +154,23 @@ class CPU:
                 self.halted = True
             return f"{self.steps:06d} pc=0x{pc0:04x} ret ; new pc=0x{self.pc:04x}"
 
-        opcode = w >> 12
+        if is_int_word(word):
+            vector = word & 0x7F
+            return_pc = (self.pc + 2) & 0xFFFF
+            self.regs[15] = (self.regs[15] - 2) & 0xFFFF
+            self.writew(self.regs[15], return_pc)
+            self.pc = self.readw((vector * 2) & 0xFFFF)
+            self.steps += 1
+            return (
+                f"{self.steps:06d} pc=0x{pc0:04x} int 0x{vector:02x} ; "
+                f"return=0x{return_pc:04x} new pc=0x{self.pc:04x}"
+            )
+
+        opcode = word >> 12
         if opcode in ALU_NAMES:
             op_name = ALU_NAMES[opcode]
-            src_mode = (w >> 6) & 0x3F
-            dst_mode = w & 0x3F
+            src_mode = (word >> 6) & 0x3F
+            dst_mode = word & 0x3F
             self.pc = (self.pc + 2) & 0xFFFF
 
             src_val, src_str = self.get_op_val(src_mode)
@@ -178,7 +187,6 @@ class CPU:
             carry_in = 1 if self.fc else 0
             if op_name == 'mov':
                 res = src_val
-                # MOV affects no flags.
             elif op_name == 'add':
                 res = (dst_val + src_val) & 0xFFFF
                 self._set_add_flags(dst_val, src_val, 0, res)
@@ -208,25 +216,26 @@ class CPU:
 
             if op_name not in ('cmp', 'test'):
                 dst_str = self.set_op_val(dst_mode, res)
+            elif dst_mode == MODE_DIR_W:
+                self.pc = (self.pc + 2) & 0xFFFF
+                dst_str = f"[0x{self.readw(self.pc - 2):04x}]"
+            elif is_reg_mode(dst_mode):
+                dst_str = f"r{get_reg_from_mode(dst_mode)}"
+            elif is_ind_reg_mode(dst_mode):
+                dst_str = f"[r{get_ind_reg_from_mode(dst_mode)}]"
             else:
-                if dst_mode == MODE_DIR_W:
-                    self.pc = (self.pc + 2) & 0xFFFF
-                    dst_str = f"[0x{self.readw(self.pc - 2):04x}]"
-                elif is_reg_mode(dst_mode):
-                    dst_str = f"r{get_reg_from_mode(dst_mode)}"
-                elif is_ind_reg_mode(dst_mode):
-                    dst_str = f"[r{get_ind_reg_from_mode(dst_mode)}]"
-                else:
-                    dst_str = "?"
+                dst_str = "?"
 
-            text = f"{op_name} {dst_str}, {src_str} ; res=0x{res:04x}"
             self.steps += 1
-            return f"{self.steps:06d} pc=0x{pc0:04x} {text}"
+            return (
+                f"{self.steps:06d} pc=0x{pc0:04x} "
+                f"{op_name} {dst_str}, {src_str} ; res=0x{res:04x}"
+            )
 
         if opcode == OP_SPECIAL_PREFIX:
-            special_op = (w >> 9) & 0x7
-            count = ((w >> 6) & 0x7) + 1
-            dst_mode = w & 0x3F
+            special_op = (word >> 9) & 0x7
+            count = ((word >> 6) & 0x7) + 1
+            dst_mode = word & 0x3F
             self.pc = (self.pc + 2) & 0xFFFF
 
             if special_op not in SPECIAL_NAMES:
@@ -261,44 +270,67 @@ class CPU:
                 self._set_shift_flags(res, carry)
             elif op_name == 'addi':
                 res = (dst_val + count) & 0xFFFF
-                # ADDI affects Z and S only.
                 self._set_zs(res)
             elif op_name == 'subi':
                 res = (dst_val - count) & 0xFFFF
-                # SUBI affects Z and S only.
                 self._set_zs(res)
             else:
                 raise RuntimeError(f"unsupported special operation: {op_name}")
 
             dst_str = self.set_op_val(dst_mode, res)
-            text = f"{op_name} {dst_str}, {count} ; res=0x{res:04x}"
             self.steps += 1
-            return f"{self.steps:06d} pc=0x{pc0:04x} {text}"
+            return (
+                f"{self.steps:06d} pc=0x{pc0:04x} "
+                f"{op_name} {dst_str}, {count} ; res=0x{res:04x}"
+            )
 
-        if opcode == OP_JMP_RET_PREFIX or opcode == OP_CALL_PREFIX:
-            op_name = 'jmp' if opcode == OP_JMP_RET_PREFIX else 'call'
-            cond = (w >> 8) & 0xF
-            is_abs = (w >> 7) & 1
-            dst_mode = w & 0x3F
+        if opcode == OP_JMP_RET_PREFIX:
+            cond = (word >> 8) & 0xF
+            is_abs = (word >> 7) & 1
             self.pc = (self.pc + 2) & 0xFFFF
 
-            if is_abs:
-                target, target_str = self.get_op_val(dst_mode)
-                if self.check_cond(cond):
-                    if op_name == 'call':
-                        self.regs[15] = (self.regs[15] - 2) & 0xFFFF
-                        self.writew(self.regs[15], self.pc)
+            if not is_abs:
+                offset_words = decode_jmp_rel_offset(word)
+                target = (self.pc + offset_words * 2) & 0xFFFF
+                taken = self.check_cond(cond)
+                if taken:
                     self.pc = target
-                    taken = True
-                else:
-                    taken = False
                 self.steps += 1
                 return (
-                    f"{self.steps:06d} pc=0x{pc0:04x} {op_name} {target_str} "
+                    f"{self.steps:06d} pc=0x{pc0:04x} jmp.s {offset_words:+d} "
                     f"{'TAKEN' if taken else 'not taken'} ; new pc=0x{self.pc:04x}"
                 )
 
-        raise RuntimeError(f"unsupported instruction at 0x{pc0:04x}: 0x{w:04x}")
+            dst_mode = word & 0x3F
+            target, target_str = self.get_op_val(dst_mode)
+            taken = self.check_cond(cond)
+            if taken:
+                self.pc = target
+            self.steps += 1
+            return (
+                f"{self.steps:06d} pc=0x{pc0:04x} jmp.l {target_str} "
+                f"{'TAKEN' if taken else 'not taken'} ; new pc=0x{self.pc:04x}"
+            )
+
+        if opcode == OP_CALL_PREFIX:
+            cond = (word >> 8) & 0xF
+            is_abs = (word >> 7) & 1
+            self.pc = (self.pc + 2) & 0xFFFF
+            if is_abs:
+                dst_mode = word & 0x3F
+                target, target_str = self.get_op_val(dst_mode)
+                taken = self.check_cond(cond)
+                if taken:
+                    self.regs[15] = (self.regs[15] - 2) & 0xFFFF
+                    self.writew(self.regs[15], self.pc)
+                    self.pc = target
+                self.steps += 1
+                return (
+                    f"{self.steps:06d} pc=0x{pc0:04x} call {target_str} "
+                    f"{'TAKEN' if taken else 'not taken'} ; new pc=0x{self.pc:04x}"
+                )
+
+        raise RuntimeError(f"unsupported instruction at 0x{pc0:04x}: 0x{word:04x}")
 
 
 def run(data: bytes, base: int, pc: int, max_steps: int,
