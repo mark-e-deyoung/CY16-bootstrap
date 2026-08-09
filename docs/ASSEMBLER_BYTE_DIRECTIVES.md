@@ -1,6 +1,6 @@
 # Bootstrap assembler byte-directive layout
 
-The CY16 bootstrap assembler currently emits 16-bit `Word` records rather than general byte segments. These byte-oriented directives therefore occupy a whole number of words:
+The CY16 bootstrap assembler supports a flat byte stream for:
 
 ```text
 .byte
@@ -10,26 +10,53 @@ The CY16 bootstrap assembler currently emits 16-bit `Word` records rather than g
 .skip
 ```
 
-Occupied size is:
+These directives pack contiguously. An odd-length directive does not force alignment before another byte directive. The final flat binary remains padded with one zero byte when needed because the current listing/output model stores 16-bit `Word` records.
+
+## Word statements must start at even addresses
+
+Instructions and word directives cannot safely begin at an odd address in the current assembler. The assembler now rejects them explicitly:
 
 ```text
-(raw byte count + 1) & ~1
+word statement starts at odd address
 ```
 
-An odd raw byte count receives one zero pad byte. The next label or statement begins after that pad at an even address.
-
-Example:
+Add an explicit pad byte before the word statement:
 
 ```asm
-.byte 0xaa
+.ascii "ABC"
+.byte 0
 next:
     ret
 ```
 
-emits `aa 00` followed by the RET word, and `next` is two bytes after the directive.
+Here `next` is at the even address four bytes after the start of the string.
 
-Previously, the two passes disagreed: some first-pass calculations used padded size, while the second pass emitted padding but advanced by raw size. A following instruction could overlap the pad byte and disagree with the symbol map. Both passes now use the same padded size and advance by the bytes actually emitted.
+Two single-byte directives can also restore alignment naturally:
 
-This is a project-specific bootstrap limitation, not complete GNU assembler compatibility. Adjacent odd directives do not pack together. A future byte-segment implementation would change symbols and binary layout and must be handled as a versioned compatibility change.
+```asm
+.byte 0x11
+.byte 0x22
+next:
+    ret
+```
 
-Short/long jump relaxation depends on the same first-pass addresses. Control-flow integration must preserve the shared padded-size helper so encoded targets match emitted labels.
+The bytes `11 22` are contiguous and `next` is two bytes after the first directive.
+
+## Why this check exists
+
+Previously, first-pass `.byte` sizing rounded to a whole word while second-pass byte emission advanced by the raw byte count. Other byte directives advanced by raw count in both passes. A word statement after an odd byte count could therefore be encoded at an odd address or overlap a temporary zero pad in the `Word` representation while the symbol table described another address.
+
+The corrected policy is:
+
+- all byte directives advance by their raw byte count in both passes;
+- byte directives may begin and end at odd addresses;
+- word-emitting statements require an even current address;
+- the final image may contain one trailing zero storage pad.
+
+This preserves the existing GNUPro-oriented flat byte behavior while failing closed before an invalid or overlapping instruction layout is emitted.
+
+## Compatibility boundary
+
+This remains a bootstrap assembler, not a complete section/relocation implementation. It does not yet provide `.align` or automatic instruction alignment. Alignment must be explicit in source.
+
+Short/long branch relaxation uses first-pass addresses. PR integration must preserve raw byte-directive sizing and the odd-word-start check so branch targets equal the actual emitted label.
