@@ -33,6 +33,16 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "follow_symlinks": {"const": false},
+        "archive_max_members": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "archive_max_read_bytes": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -61,6 +71,7 @@
       "properties": {
         "files_scanned": {"type": "integer", "minimum": 0},
         "archives_inspected": {"type": "integer", "minimum": 0},
+        "archives_incomplete": {"type": "integer", "minimum": 0},
         "matches": {"type": "integer", "minimum": 0},
         "errors": {"type": "integer", "minimum": 0}
       }
