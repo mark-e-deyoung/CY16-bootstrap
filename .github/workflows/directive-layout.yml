@@ -34,24 +34,39 @@ jobs:
           make CC=gcc
       - name: Run complete test suite
         run: pytest -q
-      - name: Exercise odd-directive CLI output
+      - name: Verify odd word start fails closed
         run: |
           mkdir -p build/directive-layout
-          cat > build/directive-layout/layout.s <<'ASM'
+          cat > build/directive-layout/odd.s <<'ASM'
           .org 0x1000
           .byte 0xaa
+              ret
+          ASM
+          if cy16-as build/directive-layout/odd.s \
+              -o build/directive-layout/odd.bin 2>build/directive-layout/odd.err; then
+            echo 'odd word statement unexpectedly assembled' >&2
+            exit 1
+          fi
+          grep -q 'word statement starts at odd address' \
+            build/directive-layout/odd.err
+      - name: Verify explicit pad produces consistent output
+        run: |
+          cat > build/directive-layout/aligned.s <<'ASM'
+          .org 0x1000
+          .byte 0xaa
+          .byte 0x00
           next:
               ret
           ASM
-          cy16-as build/directive-layout/layout.s \
-            -o build/directive-layout/layout.bin \
-            --lst build/directive-layout/layout.lst \
-            --map build/directive-layout/layout.map
+          cy16-as build/directive-layout/aligned.s \
+            -o build/directive-layout/aligned.bin \
+            --lst build/directive-layout/aligned.lst \
+            --map build/directive-layout/aligned.map
           python - <<'PY'
           from pathlib import Path
-          image = Path('build/directive-layout/layout.bin').read_bytes()
-          listing = Path('build/directive-layout/layout.lst').read_text()
-          symbols = Path('build/directive-layout/layout.map').read_text()
+          image = Path('build/directive-layout/aligned.bin').read_bytes()
+          listing = Path('build/directive-layout/aligned.lst').read_text()
+          symbols = Path('build/directive-layout/aligned.map').read_text()
           assert image[:2] == b'\xaa\x00'
           assert '1002:' in listing
           assert '1002 next' in symbols
