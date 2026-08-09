@@ -98,11 +98,29 @@ def directive_bytes(body: str, symbols: dict[str, int], pc: int) -> bytes:
     raise Cy16Error(f"unsupported byte directive: {op}")
 
 
+def byte_directive_length(body: str, symbols: dict[str, int], pc: int) -> int:
+    low = body.strip().lower()
+    if low.startswith('.byte'):
+        rest = body.split(None, 1)[1] if len(body.split(None, 1)) > 1 else ''
+        return len(split_operands(rest))
+    return len(directive_bytes(body, symbols, pc))
+
+
+def require_word_aligned(pc: int, line: Line) -> None:
+    if pc & 1:
+        raise Cy16Error(
+            f"line {line.number}: word statement starts at odd address 0x{pc:04x}; "
+            "emit an explicit pad byte before instructions or word directives"
+        )
+
+
 def append_bytes_as_words(words: list[Word], pc: int, data: bytes, source: str) -> int:
     start = pc
     padded = data + (b"\x00" if len(data) & 1 else b"")
     for i in range(0, len(padded), 2):
         words.append(Word((start + i) & 0xFFFF, padded[i] | (padded[i + 1] << 8), source))
+    # Byte directives pack contiguously. The final zero is storage padding for
+    # the Word record and may be overwritten by a later byte directive.
     return (start + len(data)) & 0xFFFF
 
 
@@ -174,9 +192,10 @@ def first_pass(lines: list[Line], base: int) -> dict[str, int]:
             continue
         if low.startswith(('.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
             continue
-        if low.startswith(('.ascii', '.asciz', '.space', '.skip')):
-            pc = (pc + len(directive_bytes(body, symbols, pc))) & 0xFFFF
+        if low.startswith(('.byte', '.ascii', '.asciz', '.space', '.skip')):
+            pc = (pc + byte_directive_length(body, symbols, pc)) & 0xFFFF
             continue
+        require_word_aligned(pc, line)
         pc += estimate_words(body) * 2
         pc &= 0xFFFF
     return symbols
@@ -197,12 +216,6 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
             continue
         if low.startswith(('.equ', '.global', '.globl', '.section', '.include', '.text', '.data', '.bss')):
             continue
-        if low.startswith(('.short', '.word')):
-            rest = body.split(None, 1)[1]
-            for expr in split_operands(rest):
-                words.append(Word(pc, u16(eval_expr(expr, symbols, pc)), line.text))
-                pc = (pc + 2) & 0xFFFF
-            continue
         if low.startswith('.byte'):
             rest = body.split(None, 1)[1]
             vals = [eval_expr(expr, symbols, pc) & 0xFF for expr in split_operands(rest)]
@@ -210,6 +223,14 @@ def assemble(source: str, base: int = 0) -> tuple[bytes, list[Word], dict[str, i
             continue
         if low.startswith(('.ascii', '.asciz', '.space', '.skip')):
             pc = append_bytes_as_words(words, pc, directive_bytes(body, symbols, pc), line.text)
+            continue
+
+        require_word_aligned(pc, line)
+        if low.startswith(('.short', '.word')):
+            rest = body.split(None, 1)[1]
+            for expr in split_operands(rest):
+                words.append(Word(pc, u16(eval_expr(expr, symbols, pc)), line.text))
+                pc = (pc + 2) & 0xFFFF
             continue
         if low == 'ret':
             words.append(Word(pc, RET_WORD, line.text))
