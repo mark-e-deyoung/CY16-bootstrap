@@ -122,7 +122,7 @@ def test_record_inventory_tamper_is_rejected(tmp_path):
     tampered = copy.deepcopy(manifest)
     tampered["records"][0]["payload_size"] += 1
     write_manifest(manifest_path, tampered)
-    with pytest.raises(ManifestError, match="record inventory"):
+    with pytest.raises(ManifestError, match="COPY length"):
         validate_manifest_file(manifest_path)
 
 

@@ -8,7 +8,8 @@ on:
       - 'spec/**'
       - 'examples/scan_artifact_v1/**'
       - 'examples/setup_stub.s'
-      - 'tests/test_artifact_manifest.py'
+      - 'tests/test_artifact_manifest*.py'
+      - 'docs/SCAN_ARTIFACT_MANIFEST_VALIDATION.md'
       - 'pyproject.toml'
       - '.github/workflows/scan-artifact-manifest.yml'
   push:
@@ -18,7 +19,8 @@ on:
       - 'src/cy16boot/scan.py'
       - 'spec/**'
       - 'examples/scan_artifact_v1/**'
-      - 'tests/test_artifact_manifest.py'
+      - 'tests/test_artifact_manifest*.py'
+      - 'docs/SCAN_ARTIFACT_MANIFEST_VALIDATION.md'
       - 'pyproject.toml'
       - '.github/workflows/scan-artifact-manifest.yml'
 
@@ -41,6 +43,8 @@ jobs:
           make CC=gcc
       - name: Run full validation suite
         run: pytest -q
+      - name: Run focused metadata-consistency mutations
+        run: pytest -q tests/test_artifact_manifest_metadata.py
       - name: Generate canonical manifest bundle
         run: |
           mkdir -p build/scan-artifact-v1
