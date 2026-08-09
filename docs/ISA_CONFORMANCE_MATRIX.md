@@ -14,17 +14,17 @@ This matrix separates questions that are otherwise easy to conflate:
 
 | Family | Documented | Assembler | Disassembler | Simulator | Compiler emission | Current evidence / next work |
 |---|---:|---|---|---|---|---|
-| `MOV` register/immediate/direct/indirect word | Yes | Baseline | Baseline | Baseline | Baseline | flags-preservation and R15 push/pop tests added; byte/indexed modes remain |
+| `MOV` register/immediate/direct/indirect word | Yes | Baseline | Baseline | Baseline | Baseline | flags-preservation and R15 push/pop tests exist; byte/indexed modes remain |
 | `ADD`, `SUB`, `CMP` | Yes | Baseline | Baseline | Baseline | Baseline subset | expand overflow and memory-operand vectors |
-| `ADDC`, `SUBB` | Yes | Baseline | Baseline | Baseline | Backend-dependent | carry/borrow execution fixed and tested on research branch |
-| `AND`, `TEST`, `OR`, `XOR` | Yes | Baseline | Baseline | Baseline | Baseline subset | Z/S update and C/O preservation test added for logical operation |
-| Conditional relative jump | Yes | Planned | Planned | Planned | Planned | assembler currently emits absolute form only; implement signed seven-bit word displacement |
-| Conditional absolute jump | Yes | Baseline | Baseline | Baseline | Baseline | add explicit condition-false and register-target tests |
-| Assembler short/long auto-selection | Yes | Planned | Planned | N/A | Planned | requires relative form before range promotion can exist |
-| `CALL` and conditional calls | Yes | Baseline | Baseline | Baseline | Baseline | add nested calls and condition-false stack-preservation test |
+| `ADDC`, `SUBB` | Yes | Baseline | Baseline | Baseline | Backend-dependent | carry/borrow execution fixed and tested |
+| `AND`, `TEST`, `OR`, `XOR` | Yes | Baseline | Baseline | Baseline | Baseline subset | Z/S update and C/O preservation tested |
+| Conditional relative jump | Yes | Baseline | Baseline | Baseline | Audit | signed seven-bit word displacement, taken/not-taken, backward branch, and exact range boundaries tested |
+| Conditional absolute jump | Yes | Baseline | Baseline | Baseline | Baseline | explicit long form and automatic promotion are tested; add register-target vectors |
+| Assembler short/long auto-selection | Yes | Baseline | Baseline | N/A | Indirect | unsuffixed jumps relax iteratively; explicit short overflow and odd targets fail closed |
+| `CALL` and conditional calls | Yes | Baseline | Baseline | Baseline | Baseline | add nested calls and condition-false stack-preservation tests |
 | `RET` | Yes | Baseline | Baseline | Baseline | Baseline | stack restore behavior present; add conditional-return variants |
-| Conditional return mnemonics | Yes | Planned/partial | Partial | Conditional engine exists | Planned | RET word is supported; general conditional RET syntax/encoding needs implementation |
-| `INT` | Yes | Planned | Planned | Planned | Planned for BIOS wrappers | vector-times-two and return-stack semantics not yet implemented |
+| Conditional return mnemonics | Yes | Planned/partial | Partial | Conditional engine exists | Planned | exact RET word works; general conditional RET syntax/encoding remains |
+| `INT` | Yes | Baseline | Baseline | Baseline | Planned for BIOS wrappers | vector-times-two dispatch, return-address push, handler RET, and vector bounds tested |
 | `SHR`, `SHL`, `ROR`, `ROL` | Yes | Baseline | Baseline | Baseline | Baseline subset | sign-extending SHR, rotate, carry, Z/S semantics corrected and tested |
 | `ADDI`, `SUBI` | Yes | Baseline | Baseline | Baseline | Baseline | values 1-8 and Z/S-only flag behavior tested |
 | `NOT`, `NEG`, `CBW` | Yes | Planned | Planned | Planned | Planned | implement seven-bit special-op encodings and edge-value tests |
@@ -41,40 +41,48 @@ This matrix separates questions that are otherwise easy to conflate:
 | Indirect word | R8-R15 pointer-capable; R15 special | Baseline subset | exhaustive R8-R14 tests and explicit R15 distinction |
 | General indirect auto-increment | documented mode | Planned | encode/decode byte/word increments |
 | Indirect with offset/index | unsigned 16-bit following word; wraps address space | Planned | parser, extension-word and wraparound tests |
-| R15 indirect write | pre-decrement, then store | Baseline | exact stack pointer/memory test added |
-| R15 indirect read | load, then post-increment | Baseline | exact value/stack pointer test added |
+| R15 indirect write | pre-decrement, then store | Baseline | exact stack pointer/memory tests include the `PUSH` macro |
+| R15 indirect read | load, then post-increment | Baseline | exact value/stack pointer tests include the `POP` macro |
 | R15 byte indirect | prohibited | Not representable yet | retain a negative test when byte syntax is added |
 | R15 indexed | no automatic increment/decrement | Planned | pointer-unchanged test |
 
-## Completed source-derived corrections on the research branch
+## Completed source-derived corrections
 
 - `MOV` no longer changes flags.
-- `ADDC` now consumes carry-in and calculates arithmetic flags.
-- `SUBB` now consumes borrow-in and calculates arithmetic flags.
+- `ADDC` consumes carry-in and calculates arithmetic flags.
+- `SUBB` consumes borrow-in and calculates arithmetic flags.
 - Logical operations update Z/S while preserving C/O.
-- `SHR` now sign-extends rather than shifting in zeros.
+- `SHR` sign-extends rather than shifting in zeros.
 - `SHL`, `SHR`, `ROR`, and `ROL` set carry from the last bit shifted or rotated out.
-- `ROR` and `ROL` now perform actual rotation.
+- `ROR` and `ROL` perform actual rotation.
 - `ADDI` and `SUBI` update only Z/S and preserve C/O.
 - Counts 1-8 are tested against the documented `count - 1` encoding.
-- R15 push/pop word behavior has a simulator test.
+- R15 push/pop word behavior has simulator tests.
+- Relative jumps encode the documented signed seven-bit word offset.
+- Explicit short and long jump forms are accepted, and unsuffixed jumps choose a stable form through iterative relaxation.
+- Forced-short offsets `-64` and `+63` succeed; `-65`, `+64`, and odd-byte targets fail.
+- Relative jumps execute in both taken and not-taken paths, including a backward loop.
+- `INT` pushes the next instruction address, loads PC from `[vector * 2]`, and returns through ordinary `RET`.
+- `INC`, `DEC`, `PUSH`, and `POP` expand to the documented real instructions.
 
-These changes are not a new green baseline until pull-request CI passes.
+GitHub Actions run `31324190788` completed the compiler build, full test suite, and direct control-flow tool exercise successfully for the stacked control-flow pull request.
 
-## Control-flow implementation target
+## Control-flow behavior
 
-The Programmer's Guide defines short jumps as a signed seven-bit displacement multiplied by two. Once relative encoding is implemented, require:
+The Programmer's Guide defines short jumps as a signed seven-bit displacement multiplied by two. The current implementation enforces:
 
-| Case | Expected result |
+| Case | Result |
 |---|---|
 | displacement `-64` | encodes as short |
 | displacement `+63` | encodes as short |
-| displacement `-65` | auto-promotes to long, or errors under explicit-short syntax |
-| displacement `+64` | auto-promotes to long, or errors under explicit-short syntax |
+| displacement `-65` | unsuffixed form promotes to long; explicit-short form errors |
+| displacement `+64` | unsuffixed form promotes to long; explicit-short form errors |
 | explicit short outside range | hard error |
 | odd-byte target | hard error because the displacement is word-scaled |
+| unsuffixed in-range target | relaxes to short |
+| unsuffixed out-of-range target | remains/promotes to absolute long form |
 
-Until then, documentation and tests must not describe ordinary `jmp` as relative; the current assembler uses the absolute destination form.
+The disassembler emits assembler-compatible `.s` and `.l` forms so decoded control flow can be reassembled without relying on presentation-only `if_*` syntax.
 
 ## Stack and interrupt semantics
 
@@ -83,13 +91,14 @@ Implemented/tested:
 - stack grows toward lower addresses for R15 writes;
 - R15 pre-decrements before a stack store;
 - R15 post-increments after a stack read;
-- ordinary CALL/RET linkage exists in the simulator.
+- ordinary CALL/RET linkage exists in the simulator;
+- `INT v` decrements R15, stores the next instruction address, and loads PC from memory at `v * 2`;
+- a handler ending in `RET` restores the interrupted instruction stream and R15.
 
 Still required:
 
 - nested calls with local stack use;
 - conditional CALL/RET behavior;
-- `INT v` pushes a return address and loads PC from memory at `v * 2`;
 - hardware ISR flag/register preservation;
 - interrupt-enable state and delayed `STI` effect.
 
@@ -99,19 +108,19 @@ The historical assembler defines these as macros, not independent CPU opcodes:
 
 | Source macro | Canonical expansion | Status |
 |---|---|---|
-| `INC X` | `ADDI X, 1` | Planned parser compatibility |
-| `DEC X` | `SUBI X, 1` | Planned parser compatibility |
-| `PUSH X` | `MOV [R15], X` | Canonical stack form works; macro spelling planned |
-| `POP X` | `MOV X, [R15]` | Canonical stack form works; macro spelling planned |
+| `INC X` | `ADDI X, 1` | Baseline; encoding-equivalence test |
+| `DEC X` | `SUBI X, 1` | Baseline; encoding-equivalence test |
+| `PUSH X` | `MOV [R15], X` | Baseline; encoding and stack-state test |
+| `POP X` | `MOV X, [R15]` | Baseline; encoding and stack-state test |
 
-The simulator should execute only the expanded instruction; macro support belongs in the assembler/parser layer.
+The simulator executes only the expanded instruction. No pseudo-opcode was added.
 
 ## Compiler safety gates
 
 The backend may emit an instruction/addressing mode only when:
 
 1. the assembler has a positive encoding test;
-2. the disassembler has a round-trip test;
+2. the disassembler has a round-trip or equivalent-form test;
 3. the simulator has a state and documented-flag test;
 4. illegal edge cases have negative tests;
 5. the ABI documents register and stack effects.
@@ -120,12 +129,10 @@ Volatile MMIO tests remain separate from DE2-115 HPI access rules: internally ex
 
 ## Next implementation order
 
-1. Run CI for the corrected arithmetic/shift/rotate semantics and new fixtures.
-2. Add explicit immediate-destination and odd-word-address diagnostics.
-3. Implement relative jumps and short/long selection with boundary tests.
-4. Implement `INT` and conditional RET forms.
-5. Implement `NOT`, `NEG`, and `CBW`.
-6. Add carry/interrupt-control instructions and delayed `STI` behavior.
-7. Add byte and indexed addressing.
-8. Add historical macro spellings.
-9. Add cycle accounting only if simulator timing becomes a project requirement.
+1. Add explicit immediate-destination and odd-word-address diagnostics.
+2. Implement conditional RET forms and condition-false CALL stack-preservation tests.
+3. Implement `NOT`, `NEG`, and `CBW`.
+4. Add carry/interrupt-control instructions and delayed `STI` behavior.
+5. Add byte and indexed addressing.
+6. Add nested-call and stack-local stress tests.
+7. Add cycle accounting only if simulator timing becomes a project requirement.
