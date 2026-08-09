@@ -1,6 +1,6 @@
 # Cited research findings for the CY16 compiler bootstrap
 
-This file summarizes the findings that drive the bootstrap design. It is written as a source-indexed research note so an agent can trace each design decision back to the attached Cypress/Red Hat documents and source files.
+This file summarizes the findings that drive the bootstrap design. It is written as a source-indexed research note so an agent can trace each design decision back to the Cypress/Red Hat documents, source files, and external behavioral references. See `SOURCE_INDEX.md` for provenance, pins, licensing, and artifact-recovery status.
 
 ## Source keys
 
@@ -9,7 +9,14 @@ This file summarizes the findings that drive the bootstrap design. It is written
 - **[S3]** `CY16 Binary Utilities Reference.pdf`.
 - **[S4]** `OTG-Host Boot Code Design.pdf`.
 - **[S5]** `OTG-Host BIOS User Manual.pdf`.
-- **[S6]** `scanwrap.c` — Cypress scanwrap source attached by the user.
+- **[S6]** `scanwrap.c` — Cypress scanwrap source supplied with the project material.
+- **[S7]** AN048 — *Building an EZ-Host / EZ-OTG Project From Start to Finish*, Rev. *B.
+- **[S8]** AN6010 — *Using HPI in Co-Processor Mode with EZ-Host/EZ-OTG*, Rev. **.
+- **[S9]** Linux `drivers/usb/c67x00` — GPL behavioral reference derived from the older Cypress driver.
+- **[S10]** `markubiak/sv-parametric-equalizer` — public DE2-115/Nios HPI and keyboard reference.
+- **[S11]** `asciilifeform/Stierlitz` — CY7C67300/ML501 HPI state-machine reference.
+- **[S12]** Official Infineon forum/KBA material identifying legacy CY3663 paths, files, and behavior.
+- **[S13]** AMD/Xilinx Answer Record 31312 archival lead for `ml40x_usb.zip` and Cypress `SD1025`.
 
 ## Findings
 
@@ -35,19 +42,19 @@ The Programmer's Guide says the CY16 uses a unified program/data memory space, i
 
 The Programmer's Guide states that general instructions contain four opcode bits, six source-operand bits, and six destination-operand bits. It documents byte/word addressing modifiers, immediate mode not being valid as a destination, and R15 restrictions for byte-wide indirect and auto-increment addressing. [S2]
 
-**Design implication:** `cy16-as` must validate illegal operand modes; `cy16cc` must avoid generating byte-indirect through R15 or auto-increment through R15. Compiler stack code must treat R15 specially.
+**Design implication:** `cy16-as` must validate illegal operand modes; `cy16cc` must avoid generating byte-indirect through R15 or illegal auto-increment forms. Compiler stack code must treat R15 specially.
 
 ### 5. R15 stack behavior
 
 R15 has special stack behavior: in indirect mode it pre-decrements on write and post-increments on read. Byte-wide indirect R15 operations are prohibited. The stack grows toward smaller addresses, CALL/INT push return addresses, and RET pops them. [S2]
 
-**Design implication:** Stack frame generation should be delayed until tests cover R15 behavior. Early compiler v0 can use simple leaf functions before expanding to complex stack locals.
+**Design implication:** Every stack form needs exact assembler and simulator tests. The compiler may use complex frames only after R15 behavior and nested-call linkage are proven.
 
 ### 6. Hardware interrupt handling
 
 The Programmer's Guide shows that hardware interrupts disable global interrupts and require user-supplied flag/register preservation, ending with restoring flags, `sti`, and `ret`. Software interrupts are effectively CALL-like and do not require the same hardware ISR template. [S2]
 
-**Design implication:** `__attribute__((interrupt))` should not be implemented in v0. It should become a v1 feature after normal function ABI and stack handling are stable.
+**Design implication:** `__attribute__((interrupt))` remains gated on tested prologue/epilogue generation, the delayed effect of `STI`, and complete register-preservation rules.
 
 ### 7. BIOS memory map and reset behavior
 
@@ -59,7 +66,7 @@ The BIOS manual gives a 64 KiB CY16 memory model with hardware/software vectors,
 
 The BIOS manual warns users should use software vectors rather than arbitrary BIOS function addresses because arbitrary BIOS routines may move between BIOS versions. [S5]
 
-**Design implication:** The runtime should expose BIOS software interrupt wrappers, not hard-coded calls into unknown ROM internals.
+**Design implication:** The runtime should expose BIOS software-interrupt wrappers, not hard-coded calls into unknown ROM internals.
 
 ### 9. Minimal startup code
 
@@ -71,7 +78,7 @@ The Boot Code Design note says the Cypress startup code was reduced to the minim
 
 The Binary Utilities Reference states that EZ-OTG/EZ-Host BIOS can read programs from EEPROM, UART, USB, or ROM, and perform operations such as copying to RAM, initializing vectors, jumping, and calling absolute addresses. To do that, images need SCAN signatures compatible with Interrupt 67 (`SCAN_INT`). `SCANWRAP <in_file> <out_file> <base_address>` adds these headers, and the base address must match the linker script because SCANWRAP does not relocate code. [S3]
 
-**Design implication:** `cy16-scanwrap` and `cy16-scan-decode` are first-class tools, not optional utilities. The compiler pipeline should produce raw binaries and then SCAN images.
+**Design implication:** `cy16-scanwrap` and `cy16-scan-decode` are first-class tools. The compiler pipeline should produce raw binaries and then SCAN images.
 
 ### 11. BIOS Idle_Task must remain running for utilities
 
@@ -81,16 +88,73 @@ The Binary Utilities Reference states USB utilities rely on the EZ-OTG/EZ-Host B
 
 ### 12. Real scanwrap source provides a golden encoding fixture
 
-The attached `scanwrap.c` help text says it takes the raw binary produced by `cy16-elf-objcopy -O binary` and adds SCAN_INT headers. It also states the base address must match the program's ORG location and that an optional call address may hook into the idle task chain and return to BIOS. The source explains an alignment issue: SCAN data must be word aligned even though the opcode is byte-sized, so a dummy header is inserted. [S6]
+The supplied `scanwrap.c` help text says it takes the raw binary produced by `cy16-elf-objcopy -O binary` and adds SCAN_INT headers. It also states the base address must match the program's ORG location and that an optional call address may hook into the idle task chain and return to BIOS. The source explains an alignment issue: SCAN data must be word aligned even though the opcode is byte-sized, so a dummy header is inserted. [S6]
 
-**Design implication:** The first assembler golden test is the `scanwrap.c` setup stub: `mov [0xc03a], 0x23b3 ; ret` -> words `0x07e7 0x23b3 0xc03a 0xcf97`. The bootstrap assembler/disassembler/simulator included here is anchored on that fixture.
+**Design implication:** The first assembler golden test is the `scanwrap.c` setup stub: `mov [0xc03a], 0x23b3 ; ret` -> words `0x07e7 0x23b3 0xc03a 0xcf97`. The assembler/disassembler/simulator are anchored on that fixture.
+
+### 13. AN048 is an end-to-end toolchain acceptance target
+
+AN048 documents separate assemble, compile, link, listing, object-to-binary, SCAN-wrap, and EEPROM-programming steps. It uses a program/link base of `0x1000` and requires the SCAN base to match. It also provides no-BIOS and BIOS-cooperative startup patterns. [S7]
+
+**Design implication:** `fixtures/an048-bal` and `tests/test_an048_fixture.py` provide an original, clean-room compile -> assemble -> simulate -> SCAN acceptance path. Full historical compatibility still requires relocatable objects, linking, listings, and tested BIOS-cooperative startup.
+
+### 14. Short branches and small immediates have high-risk boundary encodings
+
+The Programmer's Guide defines relative branches as signed seven-bit word offsets (`-64..+63`). It also stores `n - 1` in the three-bit fields for shifts, rotates, `ADDI`, and `SUBI`. [S2]
+
+**Design implication:** Add exact branch-boundary tests and exhaustive values 1-8 for these small-immediate instructions. Compiler emission is not conformant merely because ordinary examples assemble.
+
+### 15. Historical assembler macros are not independent opcodes
+
+The Programmer's Guide defines `INC`, `DEC`, `PUSH`, and `POP` as assembler macros expanding to `ADDI`, `SUBI`, and R15 `MOV` forms. [S2]
+
+**Design implication:** Macro spellings belong in the assembler/parser layer. The simulator executes only canonical instructions, and disassembly may choose canonical or compatibility syntax explicitly.
+
+### 16. External HPI direct access is not the same as internal CY16 MMIO
+
+AN6010 defines the HPI ADDRESS port as write-only and limits direct HPI memory access to internal RAM, SIE windows, and BIOS ROM. Processor-control locations such as `0xC004`, `0xC008`, and `0xC00A` require LCP control-register commands. Internally executing CY16 code can still access the processor's MMIO map normally. [S8]
+
+**Design implication:** Keep compiler volatile-MMIO tests separate from DE2-115 external-HPI tests. Do not weaken or alter the CY16 compiler because an external HPI master has a narrower direct-access window.
+
+### 17. Linux is the strongest maintained HPI/LCP behavioral oracle
+
+The upstream Linux driver records the four HPI ports, minimum cycle spacing, endian handling, mailbox synchronization, SIE initialization, reset service, TD pointers, and status handling. It states that it was derived from the older Cypress driver. [S9]
+
+**Design implication:** Use Linux to cross-check behavior and create tests, but preserve the GPL boundary and independently derive definitions from vendor documents where practical.
+
+### 18. The UIUC project is the strongest public DE2-115 implementation reference
+
+The UIUC repository contains the DE2-115 HPI wrapper, Nios/Qsys metadata, a keyboard application, TD examples, and a large CY7C67200 header. [S10]
+
+**Design implication:** Use it to compare pin assignments, polarity, bus latency, and transaction traces with the companion DE2-115 project. Treat Cypress/Terasic-derived files as provenance-sensitive rather than assuming the repository's public availability grants a permissive license.
+
+### 19. Stierlitz is useful only at the HPI FSM layer
+
+Stierlitz provides explicit multi-cycle HPI read/write states, output-enable control, read sampling, and mailbox handling for a CY7C67300 on an ML501. Its application protocol and board differ from this project. [S11]
+
+**Design implication:** Use it as a state-machine and testbench reference, not as a USB host architecture or CY16 toolchain source. Its GPLv3 license also requires a deliberate reuse decision.
+
+### 20. Legacy support pages expose precise recovery targets even when binaries are gone
+
+Official Infineon answers identify `Common/ISRS.S`, `cy7C67200_300.h`, `Source/coprocessor/de_app`, the original Cypress Linux path, `de1_bios.asm`, CY4640's SCAN-to-LCP loader, and HCD tuning symbols. AMD/Xilinx AR 31312 points toward `ml40x_usb.zip` and Cypress `SD1025`, but the surviving AR evidence is only an archival lead. [S12] [S13]
+
+**Design implication:** Maintain `CY3663_ARTIFACT_WANTED.md` as a search and intake ledger. Do not let unrecovered filenames become unverified implementation assumptions.
+
+### 21. SCAN configuration writes require an LCP translation path
+
+An Infineon KBA documents SCAN opcode `0x09` as a configuration-space write and explains that a co-processor loader should translate it into `COMM_WRITE_CTRL_REG`, rather than directly write the processor-control address over HPI. [S12]
+
+**Design implication:** Extend SCAN decoding to preserve the opcode and add a verified loader translation in the DE2-115 project. This is required before claiming compatibility with general legacy scanwrapped images.
 
 ## Recommended implementation doctrine
 
-1. Build the assembler, disassembler, simulator, and SCAN tools before the compiler backend.
-2. Vendor chibicc only after the tool validation path exists.
-3. Emit assembly from the compiler in v0; do not emit ELF yet.
-4. Keep the v0 C subset deliberately small.
-5. Use simulator execution tests as the default compiler correctness gate.
-6. Use SCAN image generation as the deployment packaging gate.
-7. Keep Cypress-derived docs as references; avoid copying proprietary tables into public source.
+1. Maintain assembler, disassembler, simulator, and SCAN tools as independent validation gates.
+2. Emit assembly before adding object/ELF complexity.
+3. Require source-derived boundary and negative tests, not only ordinary examples.
+4. Keep CY16 internal-MMIO semantics separate from external-HPI accessibility.
+5. Use simulator execution as the default compiler correctness gate.
+6. Use SCAN decoding and packaging as the deployment gate.
+7. Make AN048 the end-to-end integration fixture.
+8. Pin and document every external behavioral reference.
+9. Preserve license/source boundaries and avoid copying proprietary tables or source into public code.
+10. Treat unrecovered CY3663/Xilinx filenames as artifact leads until inspected.
