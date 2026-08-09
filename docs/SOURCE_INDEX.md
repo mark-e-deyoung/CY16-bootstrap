@@ -9,6 +9,10 @@ This index connects each external source to the project decisions, implementatio
 - **Artifact lead** — a filename, historical path, forum answer, or support record that points to material not yet recovered.
 - **Project-owned fixture** — original code that reproduces documented behavior without copying restricted source.
 
+## Metadata rule
+
+Record a revision or publication date only when it is visible in the retained source or otherwise independently verified. The retained AN048 and AN6010 copies support the technical findings used here, but their exact revision metadata has not yet been established in this repository's provenance record; they are therefore marked explicitly as unknown rather than with placeholder typography.
+
 ## Normative and retained documents
 
 | ID | Source | Role | Derived project artifacts |
@@ -19,8 +23,8 @@ This index connects each external source to the project decisions, implementatio
 | S4 | *OTG-Host Boot Code Design* | Minimal startup, stack and `.bss` considerations, `-nostartfiles` model | `libcy16/startup_*.s`, runtime design |
 | S5 | *OTG-Host BIOS User Manual* | Memory map, BIOS vectors, LCP, SCAN, stable software services | BIOS profiles, simulator/runtime wrappers, DE2 loader integration |
 | S6 | Cypress `scanwrap.c` reference supplied with the project material | Golden setup-stub encoding and wrapping behavior | `tests/test_bootstrap.py`, `SETUP_STUB_WORDS` |
-| S7 | AN048, *Building an EZ-Host / EZ-OTG Project From Start to Finish*, Rev. *B | Complete historical build recipe, linker base `0x1000`, startup alternatives, SCAN/EEPROM flow | `fixtures/an048-bal`, `AN048_BAL_COMPATIBILITY.md`, `tests/test_an048_fixture.py` |
-| S8 | AN6010, *Using HPI in Co-Processor Mode with EZ-Host/EZ-OTG*, Rev. ** | HPI direct ranges, port directions, prefetch, LCP and host sequence | `DE2_115_INTEGRATION.md`; authoritative details live in `SemperSupra/DE2-115` |
+| S7 | AN048, *Building an EZ-Host / EZ-OTG Project From Start to Finish*; exact revision/date not established from the retained copy | Complete historical build recipe, linker base `0x1000`, startup alternatives, SCAN/EEPROM flow | `fixtures/an048-bal`, `AN048_BAL_COMPATIBILITY.md`, `tests/test_an048_fixture.py` |
+| S8 | AN6010, *Using HPI in Co-Processor Mode with EZ-Host/EZ-OTG*; exact revision/date not established from the retained copy | HPI direct ranges, port directions, prefetch, LCP and host sequence | `DE2_115_INTEGRATION.md`; authoritative details live in `SemperSupra/DE2-115` |
 | S9 | CY7C67200/CY7C67300 data sheets and errata | Register map, reset, HPI timing, silicon limitations | freestanding headers, hardware profiles, DE2 bring-up constraints |
 | S10 | *USB Multi-Role Device Design By Example* | BIOS/framework architecture and application patterns | later runtime/framework compatibility work |
 
