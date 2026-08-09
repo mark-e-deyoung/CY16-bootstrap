@@ -86,6 +86,52 @@ def test_zip_members_are_inventoried_without_extraction(tmp_path):
     assert not (tmp_path.parent / "unsafe").exists()
 
 
+def test_an15484_support_bundle_fingerprints(tmp_path):
+    archive_name = "AN15484 - USB Flash Drive Controller Using SPI (EZ-Host USB Host).zip"
+    archive_path = tmp_path / archive_name
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(
+            "AN15484/Memory Stick Code CY4640/sbc/msc_api/MSC_EEPROM_scan_LCP_v2.bin",
+            b"binary fixture",
+        )
+        archive.writestr(
+            "AN15484/Memory Stick Code CY4640/sbc/msc_api/build.log",
+            "make clean wrap\ncoproc_api_scan.bin\nAN15484\n",
+        )
+
+    report = scan_roots([tmp_path], inspect_archives=True, content_scan=True)
+    assert matches_for(report, location=archive_name, fingerprint=archive_name)
+    assert matches_for(
+        report,
+        container=archive_name,
+        fingerprint="MSC_EEPROM_scan_LCP_v2.bin",
+    )
+    assert matches_for(
+        report,
+        container=archive_name,
+        fingerprint="AN15484/Memory Stick Code CY4640/sbc/msc_api",
+    )
+    assert matches_for(report, container=archive_name, fingerprint="coproc_api_scan")
+    assert matches_for(report, container=archive_name, fingerprint="AN15484")
+
+
+def test_susb1_framework_tree_fingerprints(tmp_path):
+    common = tmp_path / "Cypress" / "USB" / "OTG-Host" / "Source" / "stand-alone" / "common"
+    common.mkdir(parents=True)
+    (common / "susb1.s").write_text("FIX_USB1_EP1\n", encoding="ascii")
+    (common / "fwxcfg.h").write_text("#define FWX_SERIAL_EEPROM\n", encoding="ascii")
+    (common / "fwxmain.c").write_text("usb_init();\n", encoding="ascii")
+
+    report = scan_roots([tmp_path], content_scan=True)
+    assert matches_for(report, fingerprint="susb1.s")
+    assert matches_for(report, fingerprint="Source/stand-alone/common/susb1.s")
+    assert matches_for(report, fingerprint="FIX_USB1_EP1")
+    assert matches_for(report, fingerprint="fwxcfg.h")
+    assert matches_for(report, fingerprint="FWX_SERIAL_EEPROM")
+    assert matches_for(report, fingerprint="fwxmain.c")
+    assert matches_for(report, fingerprint="usb_init")
+
+
 def test_tar_members_are_inventoried_without_extraction(tmp_path):
     archive_path = tmp_path / "old-install.tar.gz"
     payload = b"DEFAULT_EOT MAX_FRAME_BW\n"
