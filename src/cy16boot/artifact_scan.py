@@ -13,6 +13,8 @@ from typing import Any, BinaryIO, Iterable
 SCHEMA_ID = "cy16-legacy-artifact-scan/v1"
 SCHEMA_VERSION = 1
 DEFAULT_CONTENT_MAX_BYTES = 16 * 1024 * 1024
+DEFAULT_ARCHIVE_MAX_MEMBERS = 100_000
+DEFAULT_ARCHIVE_MAX_READ_BYTES = 256 * 1024 * 1024
 
 # Exact names, path fragments, symbols, and package fingerprints recovered from
 # Cypress/Infineon documents, forum references, Xilinx answer-record leads, and
@@ -133,6 +135,17 @@ class Match:
         }
 
 
+@dataclass
+class ArchiveResult:
+    matches: list[Match]
+    errors: list[dict[str, str]]
+    incomplete: bool = False
+
+
+def _error(path: str, message: str) -> dict[str, str]:
+    return {"path": path, "error": message}
+
+
 def _sha256_stream(stream: BinaryIO, limit: int | None = None) -> str:
     digest = hashlib.sha256()
     remaining = limit
@@ -188,11 +201,22 @@ def _safe_member_name(name: str) -> str:
     return str(path)
 
 
-def _relative(path: Path, root: Path) -> str:
+def _lexical_relative(path: Path, root: Path) -> str:
     try:
-        return path.resolve().relative_to(root.resolve()).as_posix()
+        return path.absolute().relative_to(root.absolute()).as_posix()
     except ValueError:
-        return path.resolve().as_posix()
+        return path.absolute().as_posix()
+
+
+def _relative_contained(path: Path, root: Path) -> str:
+    resolved_root = root.resolve()
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(resolved_root).as_posix()
+    except ValueError as exc:
+        raise ScanError(
+            f"path escaped scan root: {_lexical_relative(path, root)}"
+        ) from exc
 
 
 def _scan_regular_file(
@@ -202,7 +226,7 @@ def _scan_regular_file(
     content_scan: bool,
     content_max_bytes: int,
 ) -> list[Match]:
-    relative = _relative(path, root)
+    relative = _relative_contained(path, root)
     size = path.stat().st_size
     found: list[Match] = []
     name_hits = _name_matches(relative)
@@ -232,44 +256,88 @@ def _scan_regular_file(
     return found
 
 
+def _archive_budget_error(
+    container: str,
+    *,
+    limit_name: str,
+    limit: int,
+) -> dict[str, str]:
+    return _error(
+        container,
+        f"archive inspection incomplete: {limit_name} limit {limit} reached",
+    )
+
+
 def _scan_zip(
     path: Path,
     root: Path,
     *,
     content_scan: bool,
     content_max_bytes: int,
-) -> list[Match]:
+    archive_max_members: int,
+    archive_max_read_bytes: int,
+) -> ArchiveResult:
     found: list[Match] = []
-    container = _relative(path, root)
+    errors: list[dict[str, str]] = []
+    container = _relative_contained(path, root)
     try:
         archive = zipfile.ZipFile(path)
-    except (OSError, zipfile.BadZipFile):
-        return found
+    except (OSError, zipfile.BadZipFile) as exc:
+        return ArchiveResult([], [_error(container, f"cannot inspect ZIP: {exc}")], True)
+
+    cumulative_read = 0
     with archive:
-        for info in sorted(archive.infolist(), key=lambda item: item.filename.casefold()):
+        infos = sorted(archive.infolist(), key=lambda item: item.filename.casefold())
+        for member_index, info in enumerate(infos):
+            if member_index >= archive_max_members:
+                errors.append(
+                    _archive_budget_error(
+                        container,
+                        limit_name="member-count",
+                        limit=archive_max_members,
+                    )
+                )
+                return ArchiveResult(found, errors, True)
             if info.is_dir():
                 continue
+
             member = _safe_member_name(info.filename)
             name_hits = _name_matches(member)
             content_hits: list[tuple[str, str]] = []
             digest: str | None = None
-            if content_scan and info.file_size <= content_max_bytes:
+            should_read = (content_scan or bool(name_hits)) and (
+                info.file_size <= content_max_bytes
+            )
+            if should_read:
+                if cumulative_read + info.file_size > archive_max_read_bytes:
+                    errors.append(
+                        _archive_budget_error(
+                            container,
+                            limit_name="cumulative-content-bytes",
+                            limit=archive_max_read_bytes,
+                        )
+                    )
+                    return ArchiveResult(found, errors, True)
                 try:
                     with archive.open(info, "r") as stream:
                         data = stream.read(content_max_bytes + 1)
                     if len(data) <= content_max_bytes:
-                        content_hits = _content_matches(data)
+                        cumulative_read += len(data)
+                        if content_scan:
+                            content_hits = _content_matches(data)
                         if name_hits or content_hits:
                             digest = hashlib.sha256(data).hexdigest()
-                except (OSError, RuntimeError, zipfile.BadZipFile):
-                    content_hits = []
-            if name_hits and digest is None and info.file_size <= content_max_bytes:
-                try:
-                    with archive.open(info, "r") as stream:
-                        digest = _sha256_stream(stream)
-                except (OSError, RuntimeError, zipfile.BadZipFile):
-                    digest = None
-            for fingerprint_class, fingerprint in sorted(set(name_hits + content_hits)):
+                except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+                    errors.append(
+                        _error(
+                            f"{container}!/{member}",
+                            f"cannot read ZIP member: {exc}",
+                        )
+                    )
+
+            for fingerprint_class, fingerprint in sorted(
+                set(name_hits + content_hits)
+            ):
                 found.append(
                     Match(
                         root=root.resolve().as_posix(),
@@ -283,7 +351,19 @@ def _scan_zip(
                         archive_member_crc32=f"{info.CRC:08x}",
                     )
                 )
-    return found
+    return ArchiveResult(found, errors, False)
+
+
+def _bounded_tar_members(
+    archive: tarfile.TarFile,
+    maximum: int,
+) -> tuple[list[tarfile.TarInfo], bool]:
+    members: list[tarfile.TarInfo] = []
+    for info in archive:
+        if len(members) >= maximum:
+            return members, True
+        members.append(info)
+    return members, False
 
 
 def _scan_tar(
@@ -292,15 +372,21 @@ def _scan_tar(
     *,
     content_scan: bool,
     content_max_bytes: int,
-) -> list[Match]:
+    archive_max_members: int,
+    archive_max_read_bytes: int,
+) -> ArchiveResult:
     found: list[Match] = []
-    container = _relative(path, root)
+    errors: list[dict[str, str]] = []
+    container = _relative_contained(path, root)
     try:
         archive = tarfile.open(path, "r:*")
-    except (OSError, tarfile.TarError):
-        return found
+    except (OSError, tarfile.TarError) as exc:
+        return ArchiveResult([], [_error(container, f"cannot inspect TAR: {exc}")], True)
+
+    cumulative_read = 0
     with archive:
-        members = sorted(archive.getmembers(), key=lambda item: item.name.casefold())
+        members, exceeded = _bounded_tar_members(archive, archive_max_members)
+        members.sort(key=lambda item: item.name.casefold())
         for info in members:
             if not info.isfile():
                 continue
@@ -308,20 +394,40 @@ def _scan_tar(
             name_hits = _name_matches(member)
             content_hits: list[tuple[str, str]] = []
             digest: str | None = None
-            if (content_scan or name_hits) and info.size <= content_max_bytes:
+            should_read = (content_scan or bool(name_hits)) and (
+                info.size <= content_max_bytes
+            )
+            if should_read:
+                if cumulative_read + info.size > archive_max_read_bytes:
+                    errors.append(
+                        _archive_budget_error(
+                            container,
+                            limit_name="cumulative-content-bytes",
+                            limit=archive_max_read_bytes,
+                        )
+                    )
+                    return ArchiveResult(found, errors, True)
                 try:
                     stream = archive.extractfile(info)
                     if stream is not None:
                         with stream:
                             data = stream.read(content_max_bytes + 1)
                         if len(data) <= content_max_bytes:
+                            cumulative_read += len(data)
                             if content_scan:
                                 content_hits = _content_matches(data)
                             if name_hits or content_hits:
                                 digest = hashlib.sha256(data).hexdigest()
-                except (OSError, tarfile.TarError):
-                    content_hits = []
-            for fingerprint_class, fingerprint in sorted(set(name_hits + content_hits)):
+                except (OSError, tarfile.TarError) as exc:
+                    errors.append(
+                        _error(
+                            f"{container}!/{member}",
+                            f"cannot read TAR member: {exc}",
+                        )
+                    )
+            for fingerprint_class, fingerprint in sorted(
+                set(name_hits + content_hits)
+            ):
                 found.append(
                     Match(
                         root=root.resolve().as_posix(),
@@ -334,14 +440,65 @@ def _scan_tar(
                         sha256=digest,
                     )
                 )
-    return found
+
+        if exceeded:
+            errors.append(
+                _archive_budget_error(
+                    container,
+                    limit_name="member-count",
+                    limit=archive_max_members,
+                )
+            )
+            return ArchiveResult(found, errors, True)
+    return ArchiveResult(found, errors, False)
 
 
 def _archive_kind(path: Path) -> str | None:
     lower = path.name.casefold()
-    if lower.endswith(".tar.gz") or lower.endswith(".tar.bz2") or lower.endswith(".tar.xz"):
+    if (
+        lower.endswith(".tar.gz")
+        or lower.endswith(".tar.bz2")
+        or lower.endswith(".tar.xz")
+    ):
         return "tar"
     return ARCHIVE_SUFFIXES.get(path.suffix.casefold())
+
+
+def _directory_candidates(
+    root: Path,
+) -> tuple[list[Path], list[dict[str, str]]]:
+    candidates: list[Path] = []
+    errors: list[dict[str, str]] = []
+    for current, dir_names, file_names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        safe_dirs: list[str] = []
+        for name in sorted(dir_names, key=str.casefold):
+            path = current_path / name
+            if path.is_symlink():
+                errors.append(
+                    _error(
+                        _lexical_relative(path, root),
+                        "filesystem symlink skipped",
+                    )
+                )
+            else:
+                safe_dirs.append(name)
+        dir_names[:] = safe_dirs
+
+        for name in sorted(file_names, key=str.casefold):
+            path = current_path / name
+            if path.is_symlink():
+                errors.append(
+                    _error(
+                        _lexical_relative(path, root),
+                        "filesystem symlink skipped",
+                    )
+                )
+                continue
+            if path.is_file():
+                candidates.append(path)
+    candidates.sort(key=lambda item: _lexical_relative(item, root).casefold())
+    return candidates, errors
 
 
 def scan_roots(
@@ -350,33 +507,49 @@ def scan_roots(
     inspect_archives: bool = True,
     content_scan: bool = False,
     content_max_bytes: int = DEFAULT_CONTENT_MAX_BYTES,
+    archive_max_members: int = DEFAULT_ARCHIVE_MAX_MEMBERS,
+    archive_max_read_bytes: int = DEFAULT_ARCHIVE_MAX_READ_BYTES,
 ) -> dict[str, Any]:
     normalized_roots: list[Path] = []
     for root_value in roots:
-        root = Path(root_value).expanduser().resolve()
+        lexical_root = Path(root_value).expanduser().absolute()
+        if lexical_root.is_symlink():
+            raise ScanError(f"scan root must not be a symlink: {lexical_root}")
+        root = lexical_root.resolve()
         if not root.exists():
             raise ScanError(f"scan root does not exist: {root}")
         normalized_roots.append(root)
-    if content_max_bytes < 0:
-        raise ScanError("content_max_bytes must be non-negative")
+
+    for name, value in (
+        ("content_max_bytes", content_max_bytes),
+        ("archive_max_members", archive_max_members),
+        ("archive_max_read_bytes", archive_max_read_bytes),
+    ):
+        if value < 0:
+            raise ScanError(f"{name} must be non-negative")
 
     matches: list[Match] = []
     scanned_files = 0
     scanned_archives = 0
+    incomplete_archives = 0
     errors: list[dict[str, str]] = []
 
     for root in sorted(normalized_roots, key=lambda item: item.as_posix().casefold()):
-        candidates = [root] if root.is_file() else sorted(
-            (path for path in root.rglob("*") if path.is_file()),
-            key=lambda item: item.as_posix().casefold(),
-        )
+        if root.is_file():
+            candidates = [root]
+            root_base = root.parent
+        else:
+            candidates, candidate_errors = _directory_candidates(root)
+            errors.extend(candidate_errors)
+            root_base = root
+
         for path in candidates:
             scanned_files += 1
             try:
                 matches.extend(
                     _scan_regular_file(
                         path,
-                        root if root.is_dir() else root.parent,
+                        root_base,
                         content_scan=content_scan,
                         content_max_bytes=content_max_bytes,
                     )
@@ -384,27 +557,32 @@ def scan_roots(
                 archive_kind = _archive_kind(path)
                 if inspect_archives and archive_kind:
                     scanned_archives += 1
-                    archive_root = root if root.is_dir() else root.parent
                     if archive_kind == "zip":
-                        matches.extend(
-                            _scan_zip(
-                                path,
-                                archive_root,
-                                content_scan=content_scan,
-                                content_max_bytes=content_max_bytes,
-                            )
+                        archive_result = _scan_zip(
+                            path,
+                            root_base,
+                            content_scan=content_scan,
+                            content_max_bytes=content_max_bytes,
+                            archive_max_members=archive_max_members,
+                            archive_max_read_bytes=archive_max_read_bytes,
                         )
                     else:
-                        matches.extend(
-                            _scan_tar(
-                                path,
-                                archive_root,
-                                content_scan=content_scan,
-                                content_max_bytes=content_max_bytes,
-                            )
+                        archive_result = _scan_tar(
+                            path,
+                            root_base,
+                            content_scan=content_scan,
+                            content_max_bytes=content_max_bytes,
+                            archive_max_members=archive_max_members,
+                            archive_max_read_bytes=archive_max_read_bytes,
                         )
-            except (OSError, PermissionError) as exc:
-                errors.append({"path": path.as_posix(), "error": str(exc)})
+                    matches.extend(archive_result.matches)
+                    errors.extend(archive_result.errors)
+                    if archive_result.incomplete:
+                        incomplete_archives += 1
+            except (OSError, PermissionError, ScanError) as exc:
+                errors.append(
+                    _error(_lexical_relative(path, root_base), str(exc))
+                )
 
     unique = {
         (
@@ -427,6 +605,10 @@ def scan_roots(
             match.fingerprint.casefold(),
         ),
     )
+    ordered_errors = sorted(
+        errors,
+        key=lambda item: (item["path"].casefold(), item["error"].casefold()),
+    )
     return {
         "schema": SCHEMA_ID,
         "schema_version": SCHEMA_VERSION,
@@ -434,6 +616,9 @@ def scan_roots(
             "inspect_archives": inspect_archives,
             "content_scan": content_scan,
             "content_max_bytes": content_max_bytes,
+            "follow_symlinks": False,
+            "archive_max_members": archive_max_members,
+            "archive_max_read_bytes": archive_max_read_bytes,
         },
         "roots": [root.as_posix() for root in normalized_roots],
         "fingerprints": {
@@ -442,11 +627,12 @@ def scan_roots(
         "summary": {
             "files_scanned": scanned_files,
             "archives_inspected": scanned_archives,
+            "archives_incomplete": incomplete_archives,
             "matches": len(ordered),
-            "errors": len(errors),
+            "errors": len(ordered_errors),
         },
         "matches": [match.to_json() for match in ordered],
-        "errors": sorted(errors, key=lambda item: item["path"].casefold()),
+        "errors": ordered_errors,
     }
 
 
@@ -480,6 +666,16 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=DEFAULT_CONTENT_MAX_BYTES,
     )
+    parser.add_argument(
+        "--archive-max-members",
+        type=int,
+        default=DEFAULT_ARCHIVE_MAX_MEMBERS,
+    )
+    parser.add_argument(
+        "--archive-max-read-bytes",
+        type=int,
+        default=DEFAULT_ARCHIVE_MAX_READ_BYTES,
+    )
     args = parser.parse_args(argv)
     try:
         report = scan_roots(
@@ -487,6 +683,8 @@ def main(argv: list[str] | None = None) -> int:
             inspect_archives=not args.no_archives,
             content_scan=args.content,
             content_max_bytes=args.content_max_bytes,
+            archive_max_members=args.archive_max_members,
+            archive_max_read_bytes=args.archive_max_read_bytes,
         )
     except ScanError as exc:
         parser.error(str(exc))
@@ -495,6 +693,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"scanned={report['summary']['files_scanned']} "
         f"archives={report['summary']['archives_inspected']} "
+        f"incomplete={report['summary']['archives_incomplete']} "
         f"matches={report['summary']['matches']} "
         f"errors={report['summary']['errors']}"
     )
