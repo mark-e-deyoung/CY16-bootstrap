@@ -35,6 +35,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest pycparser
           pip install -e .
+      - name: Build C-based compiler
+        run: |
+          make clean
+          make CC=gcc
       - name: Run full validation suite
         run: pytest -q
       - name: Generate canonical manifest bundle
