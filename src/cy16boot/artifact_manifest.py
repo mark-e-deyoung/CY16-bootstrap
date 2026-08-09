@@ -27,6 +27,12 @@ EXECUTION_MODELS = {"bios-cooperative", "standalone", "unknown"}
 TARGET_DEVICES = {"CY7C67200", "CY7C67300"}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+KNOWN_RECORD_NAMES = {
+    SCAN_OP_COPY: "COPY",
+    SCAN_OP_JUMP: "JUMP",
+    SCAN_OP_CALL: "CALL",
+    SCAN_OP_WRITE_CONFIG: "WRITE_CONFIG",
+}
 
 
 class ManifestError(ValueError):
@@ -58,7 +64,12 @@ def _require_str(name: str, value: Any) -> str:
     return value
 
 
-def _require_exact_keys(name: str, value: dict[str, Any], allowed: set[str], required: set[str]) -> None:
+def _require_exact_keys(
+    name: str,
+    value: dict[str, Any],
+    allowed: set[str],
+    required: set[str],
+) -> None:
     missing = required - value.keys()
     extra = value.keys() - allowed
     if missing:
@@ -72,7 +83,11 @@ def _safe_relative_path(name: str, value: Any) -> PurePosixPath:
     if "\\" in text:
         raise ManifestError(f"{name} must use POSIX separators")
     path = PurePosixPath(text)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise ManifestError(f"{name} must be a safe relative path")
     return path
 
@@ -134,7 +149,9 @@ def _file_descriptor(path_text: str, data: bytes) -> dict[str, Any]:
     }
 
 
-def _has_raw_copy(records: Iterable[ScanRecord], load_address: int, raw_data: bytes) -> bool:
+def _has_raw_copy(
+    records: Iterable[ScanRecord], load_address: int, raw_data: bytes
+) -> bool:
     return any(
         record.opcode == SCAN_OP_COPY
         and record.address == load_address
@@ -182,7 +199,9 @@ def build_manifest(
         raise ManifestError(f"unsupported target device: {target_device}")
     _require_str("producer_repository", producer_repository)
     if not COMMIT_RE.fullmatch(producer_commit):
-        raise ManifestError("producer_commit must be a lowercase 40-character hex SHA")
+        raise ManifestError(
+            "producer_commit must be a lowercase 40-character hex SHA"
+        )
 
     raw_data = read_bytes(raw)
     scan_data = read_bytes(scan)
@@ -247,12 +266,16 @@ def write_manifest(path: str | Path, manifest: dict[str, Any]) -> None:
 
 
 def _validate_string_list(name: str, value: Any) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) for item in value
+    ):
         raise ManifestError(f"{name} must be a list of strings")
     return value
 
 
-def _validate_file_descriptor(name: str, value: Any) -> tuple[PurePosixPath, int, str]:
+def _validate_file_descriptor(
+    name: str, value: Any
+) -> tuple[PurePosixPath, int, str]:
     if not isinstance(value, dict):
         raise ManifestError(f"{name} must be an object")
     _require_exact_keys(
@@ -269,17 +292,37 @@ def _validate_file_descriptor(name: str, value: Any) -> tuple[PurePosixPath, int
     return path, size, digest
 
 
+def _canonical_record_name(opcode: int) -> str:
+    return KNOWN_RECORD_NAMES.get(opcode, f"OP_0x{opcode:02x}")
+
+
 def _validate_record_shape(index: int, value: Any) -> dict[str, Any]:
     name = f"records[{index}]"
     if not isinstance(value, dict):
         raise ManifestError(f"{name} must be an object")
     allowed = {
-        "index", "offset", "opcode", "name", "encoded_length", "record_size",
-        "address", "payload_size", "payload_sha256", "config_offset", "value",
+        "index",
+        "offset",
+        "opcode",
+        "name",
+        "encoded_length",
+        "record_size",
+        "address",
+        "payload_size",
+        "payload_sha256",
+        "config_offset",
+        "value",
     }
     required = {
-        "index", "offset", "opcode", "name", "encoded_length", "record_size",
-        "address", "payload_size", "payload_sha256",
+        "index",
+        "offset",
+        "opcode",
+        "name",
+        "encoded_length",
+        "record_size",
+        "address",
+        "payload_size",
+        "payload_sha256",
     }
     _require_exact_keys(name, value, allowed, required)
     if value["index"] != index:
@@ -287,7 +330,9 @@ def _validate_record_shape(index: int, value: Any) -> dict[str, Any]:
     _require_int(f"{name}.offset", value["offset"], 0, 0xFFFFFFFF)
     opcode = _require_int(f"{name}.opcode", value["opcode"], 0, 0xFF)
     _require_str(f"{name}.name", value["name"])
-    _require_int(f"{name}.encoded_length", value["encoded_length"], 1, 0xFFFF)
+    _require_int(
+        f"{name}.encoded_length", value["encoded_length"], 1, 0xFFFF
+    )
     _require_int(f"{name}.record_size", value["record_size"], 6, 0x10004)
     _require_int(f"{name}.address", value["address"], 0, 0xFFFF)
     _require_int(f"{name}.payload_size", value["payload_size"], 0, 0xFFFF)
@@ -297,11 +342,71 @@ def _validate_record_shape(index: int, value: Any) -> dict[str, Any]:
     if opcode == SCAN_OP_WRITE_CONFIG:
         if "config_offset" not in value or "value" not in value:
             raise ManifestError(f"{name} missing WRITE_CONFIG fields")
-        _require_int(f"{name}.config_offset", value["config_offset"], 0, 0xFF)
+        _require_int(
+            f"{name}.config_offset", value["config_offset"], 0, 0xFF
+        )
         _require_int(f"{name}.value", value["value"], 0, 0xFFFF)
     elif "config_offset" in value or "value" in value:
         raise ManifestError(f"{name} has WRITE_CONFIG-only fields")
     return value
+
+
+def _validate_record_relationships(records: list[dict[str, Any]]) -> list[str]:
+    """Validate relationships that require no artifact-file access."""
+
+    expected_offset = 0
+    names: set[str] = set()
+    for index, record in enumerate(records):
+        label = f"records[{index}]"
+        opcode = record["opcode"]
+        encoded_length = record["encoded_length"]
+        record_size = record["record_size"]
+        payload_size = record["payload_size"]
+
+        if record["offset"] != expected_offset:
+            raise ManifestError(
+                f"{label}.offset must equal contiguous offset {expected_offset}"
+            )
+        if record_size != encoded_length + 5:
+            raise ManifestError(
+                f"{label}.record_size must equal encoded_length + 5"
+            )
+
+        expected_name = _canonical_record_name(opcode)
+        if record["name"] != expected_name:
+            raise ManifestError(
+                f"{label}.name must be {expected_name} for opcode 0x{opcode:02x}"
+            )
+
+        if opcode == SCAN_OP_COPY:
+            if encoded_length != payload_size + 2:
+                raise ManifestError(
+                    f"{label} COPY length must equal payload_size + 2"
+                )
+        elif opcode in {SCAN_OP_CALL, SCAN_OP_JUMP}:
+            if encoded_length != 2 or payload_size != 0:
+                raise ManifestError(
+                    f"{label} {expected_name} must have length 2 and no payload"
+                )
+        elif opcode == SCAN_OP_WRITE_CONFIG:
+            config_offset = record["config_offset"]
+            if encoded_length != 3 or payload_size != 2:
+                raise ManifestError(
+                    f"{label} WRITE_CONFIG must have length 3 and payload size 2"
+                )
+            if record["address"] != (0xC000 | config_offset):
+                raise ManifestError(
+                    f"{label} WRITE_CONFIG address disagrees with config_offset"
+                )
+        elif encoded_length != payload_size + 2:
+            raise ManifestError(
+                f"{label} unknown address record length must equal payload_size + 2"
+            )
+
+        names.add(record["name"])
+        expected_offset += record_size
+
+    return sorted(names)
 
 
 def validate_manifest_data(
@@ -313,13 +418,26 @@ def validate_manifest_data(
     if not isinstance(manifest, dict):
         raise ManifestError("manifest must be a JSON object")
     top_keys = {
-        "schema", "schema_version", "artifact_kind", "target", "execution_model",
-        "byte_order", "producer", "image", "records", "required_loader_features",
-        "constraints", "warnings", "provenance_notes",
+        "schema",
+        "schema_version",
+        "artifact_kind",
+        "target",
+        "execution_model",
+        "byte_order",
+        "producer",
+        "image",
+        "records",
+        "required_loader_features",
+        "constraints",
+        "warnings",
+        "provenance_notes",
     }
     _require_exact_keys("manifest", manifest, top_keys, top_keys)
 
-    if manifest["schema"] != SCHEMA_ID or manifest["schema_version"] != SCHEMA_VERSION:
+    if (
+        manifest["schema"] != SCHEMA_ID
+        or manifest["schema_version"] != SCHEMA_VERSION
+    ):
         raise ManifestError("unsupported manifest schema or schema version")
     if manifest["artifact_kind"] != ARTIFACT_KIND:
         raise ManifestError("unsupported artifact_kind")
@@ -331,7 +449,9 @@ def validate_manifest_data(
     target = manifest["target"]
     if not isinstance(target, dict):
         raise ManifestError("target must be an object")
-    _require_exact_keys("target", target, {"family", "device"}, {"family", "device"})
+    _require_exact_keys(
+        "target", target, {"family", "device"}, {"family", "device"}
+    )
     if target["family"] != "C67x00" or target["device"] not in TARGET_DEVICES:
         raise ManifestError("unsupported target")
 
@@ -345,8 +465,12 @@ def validate_manifest_data(
         {"repository", "commit", "tool", "version"},
     )
     _require_str("producer.repository", producer["repository"])
-    if not COMMIT_RE.fullmatch(_require_str("producer.commit", producer["commit"])):
-        raise ManifestError("producer.commit must be a lowercase 40-character hex SHA")
+    if not COMMIT_RE.fullmatch(
+        _require_str("producer.commit", producer["commit"])
+    ):
+        raise ManifestError(
+            "producer.commit must be a lowercase 40-character hex SHA"
+        )
     if producer["tool"] != "cy16-scan-manifest":
         raise ManifestError("unsupported producer.tool")
     _require_str("producer.version", producer["version"])
@@ -360,8 +484,12 @@ def validate_manifest_data(
         {"load_address", "entry_point", "raw_binary", "scan"},
         {"load_address", "entry_point", "raw_binary", "scan"},
     )
-    load_address = _require_int("image.load_address", image["load_address"], 0, 0xFFFF)
-    entry_point = _require_int("image.entry_point", image["entry_point"], 0, 0xFFFF)
+    load_address = _require_int(
+        "image.load_address", image["load_address"], 0, 0xFFFF
+    )
+    entry_point = _require_int(
+        "image.entry_point", image["entry_point"], 0, 0xFFFF
+    )
     if load_address & 1 or entry_point & 1:
         raise ManifestError("image addresses must be word aligned")
     raw_rel, raw_size, raw_digest = _validate_file_descriptor(
@@ -376,12 +504,19 @@ def validate_manifest_data(
         raise ManifestError("records must be a non-empty list")
     for index, record in enumerate(records_value):
         _validate_record_shape(index, record)
+    metadata_features = _validate_record_relationships(records_value)
 
     features = _validate_string_list(
         "required_loader_features", manifest["required_loader_features"]
     )
     if features != sorted(set(features)):
-        raise ManifestError("required_loader_features must be sorted and unique")
+        raise ManifestError(
+            "required_loader_features must be sorted and unique"
+        )
+    if features != metadata_features:
+        raise ManifestError(
+            "required_loader_features do not match manifest record metadata"
+        )
     _validate_string_list("constraints", manifest["constraints"])
     _validate_string_list("warnings", manifest["warnings"])
     _validate_string_list("provenance_notes", manifest["provenance_notes"])
@@ -409,7 +544,9 @@ def validate_manifest_data(
     if features != expected_features:
         raise ManifestError("required_loader_features do not match SCAN records")
     if not _has_raw_copy(scan_records, load_address, raw_data):
-        raise ManifestError("SCAN image does not COPY the raw binary at load_address")
+        raise ManifestError(
+            "SCAN image does not COPY the raw binary at load_address"
+        )
     if not _has_entry_transfer(scan_records, entry_point):
         raise ManifestError("SCAN image does not CALL or JUMP to entry_point")
     return manifest
@@ -451,10 +588,14 @@ def _validate_command(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Create or validate a CY16 SCAN artifact manifest")
+    parser = argparse.ArgumentParser(
+        description="Create or validate a CY16 SCAN artifact manifest"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    create = subparsers.add_parser("create", help="create a deterministic v1 manifest")
+    create = subparsers.add_parser(
+        "create", help="create a deterministic v1 manifest"
+    )
     create.add_argument("raw_binary")
     create.add_argument("scan")
     create.add_argument("output")
@@ -464,13 +605,17 @@ def main(argv: list[str] | None = None) -> int:
         "--execution-model", choices=sorted(EXECUTION_MODELS), required=True
     )
     create.add_argument(
-        "--target-device", choices=sorted(TARGET_DEVICES), default="CY7C67200"
+        "--target-device",
+        choices=sorted(TARGET_DEVICES),
+        default="CY7C67200",
     )
     create.add_argument(
         "--producer-repository", default="mark-e-deyoung/CY16-bootstrap"
     )
     create.add_argument(
-        "--producer-commit", default=os.environ.get("GITHUB_SHA"), required=False
+        "--producer-commit",
+        default=os.environ.get("GITHUB_SHA"),
+        required=False,
     )
     create.add_argument("--tool-version", default=None)
     create.add_argument("--warning", action="append", default=[])
@@ -478,7 +623,9 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--provenance-note", action="append", default=[])
     create.set_defaults(func=_create_command)
 
-    validate = subparsers.add_parser("validate", help="validate a v1 manifest and its files")
+    validate = subparsers.add_parser(
+        "validate", help="validate a v1 manifest and its files"
+    )
     validate.add_argument("manifest")
     validate.set_defaults(func=_validate_command)
 
