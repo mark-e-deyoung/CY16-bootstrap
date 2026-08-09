@@ -39,9 +39,10 @@ SPECIAL_OPS = {
 }
 SPECIAL_NAMES = {v: k for k, v in SPECIAL_OPS.items()}
 
-# Special opcodes
+# Program-control opcodes
 OP_JMP_RET_PREFIX = 0xC  # 1100
 OP_CALL_PREFIX    = 0xA  # 1010
+INT_WORD_PREFIX   = 0xAF00  # 1010 1111 0vvv vvvv
 
 # Conditions
 COND_Z      = 0x0  # EQ
@@ -63,18 +64,20 @@ COND_ALWAYS = 0xF
 COND_NAMES = {
     'z': COND_Z, 'eq': COND_Z,
     'nz': COND_NZ, 'ne': COND_NZ,
-    'c': COND_C, 'lo': COND_C,
-    'nc': COND_NC, 'hs': COND_NC,
+    'c': COND_C, 'b': COND_C, 'lo': COND_C,
+    'nc': COND_NC, 'ae': COND_NC, 'hs': COND_NC,
     's': COND_S, 'ns': COND_NS,
     'o': COND_O, 'no': COND_NO,
-    'a': COND_A, 'hi': COND_A,
-    'be': COND_BE, 'ls': COND_BE,
-    'g': COND_G, 'ge': COND_GE,
-    'l': COND_L, 'le': COND_LE,
+    'a': COND_A, 'nbe': COND_A, 'hi': COND_A,
+    'be': COND_BE, 'na': COND_BE, 'ls': COND_BE,
+    'g': COND_G, 'nle': COND_G,
+    'ge': COND_GE, 'nl': COND_GE,
+    'l': COND_L, 'nge': COND_L,
+    'le': COND_LE, 'ng': COND_LE,
     'always': COND_ALWAYS,
 }
 
-# Inverse condition map for disassembly
+# Canonical inverse names for disassembly.
 COND_CODE_NAMES = {
     0x0: 'z', 0x1: 'nz', 0x2: 'c', 0x3: 'nc',
     0x4: 's', 0x5: 'ns', 0x6: 'o', 0x7: 'no',
@@ -94,34 +97,64 @@ MODE_IND_R_MASK = 0b111000
 MODE_IND_R_VAL = 0b010000
 MODE_IND_R15 = 0b010111
 
+
 def encode_alu(op: int, src_mode: int, dst_mode: int) -> int:
     return (op << 12) | ((src_mode & 0x3F) << 6) | (dst_mode & 0x3F)
+
 
 def encode_special(op: int, count: int, dst_mode: int) -> int:
     # count is 1-8, stored as 0-7
     return (OP_SPECIAL_PREFIX << 12) | ((op & 0x7) << 9) | (((count - 1) & 0x7) << 6) | (dst_mode & 0x3F)
 
+
+def encode_jmp_rel(cond: int, offset_words: int) -> int:
+    if not -64 <= offset_words <= 63:
+        raise ValueError(f"relative jump offset out of range: {offset_words}")
+    return (OP_JMP_RET_PREFIX << 12) | ((cond & 0xF) << 8) | (offset_words & 0x7F)
+
+
+def decode_jmp_rel_offset(word: int) -> int:
+    value = word & 0x7F
+    return value - 0x80 if value & 0x40 else value
+
+
 def encode_jmp_abs(cond: int, dst_mode: int) -> int:
-    return (OP_JMP_RET_PREFIX << 12) | (cond << 8) | (1 << 7) | (dst_mode & 0x3F)
+    return (OP_JMP_RET_PREFIX << 12) | ((cond & 0xF) << 8) | (1 << 7) | (dst_mode & 0x3F)
+
 
 def encode_call_abs(cond: int, dst_mode: int) -> int:
-    return (OP_CALL_PREFIX << 12) | (cond << 8) | (1 << 7) | (dst_mode & 0x3F)
+    return (OP_CALL_PREFIX << 12) | ((cond & 0xF) << 8) | (1 << 7) | (dst_mode & 0x3F)
+
+
+def encode_int(vector: int) -> int:
+    if not 0 <= vector <= 0x7F:
+        raise ValueError(f"interrupt vector out of range: {vector}")
+    return INT_WORD_PREFIX | vector
+
+
+def is_int_word(word: int) -> bool:
+    return (word & 0xFF80) == INT_WORD_PREFIX
+
 
 def is_reg_mode(mode: int) -> bool:
     return (mode & MODE_REG_MASK) == MODE_REG_VAL
 
+
 def get_reg_from_mode(mode: int) -> int:
     return mode & 0b001111
+
 
 def make_reg_mode(reg: int) -> int:
     return MODE_REG_VAL | (reg & 0b001111)
 
+
 def is_ind_reg_mode(mode: int) -> bool:
     return (mode & MODE_IND_R_MASK) == MODE_IND_R_VAL
+
 
 def get_ind_reg_from_mode(mode: int) -> int:
     return (mode & 0b000111) + 8
 
+
 def make_ind_reg_mode(reg: int) -> int:
     return MODE_IND_R_VAL | ((reg - 8) & 0b000111)
-
