@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import tarfile
 import zipfile
 from pathlib import Path
@@ -160,10 +159,12 @@ def test_zero_read_budget_still_allows_name_only_inventory(tmp_path: Path) -> No
         archive_max_read_bytes=0,
     )
 
-    # The matching name is visible, but hashing it would require reading bytes,
-    # so the archive is explicitly incomplete rather than silently truncated.
+    # The matching name is retained without a hash, while the archive remains
+    # explicitly incomplete because member bytes could not be read.
     assert report["summary"]["archives_incomplete"] == 1
-    assert not [item for item in report["matches"] if item["container"]]
+    member_matches = [item for item in report["matches"] if item["container"]]
+    assert any(item["fingerprint"] == "ISRS.S" for item in member_matches)
+    assert all(item["sha256"] is None for item in member_matches)
     assert "cumulative-content-bytes limit 0 reached" in report["errors"][0]["error"]
 
 
