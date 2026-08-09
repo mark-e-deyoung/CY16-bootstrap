@@ -1,0 +1,73 @@
+name: CY16 SCAN Artifact Manifest
+
+on:
+  pull_request:
+    paths:
+      - 'src/cy16boot/artifact_manifest.py'
+      - 'src/cy16boot/scan.py'
+      - 'spec/**'
+      - 'examples/scan_artifact_v1/**'
+      - 'examples/setup_stub.s'
+      - 'tests/test_artifact_manifest.py'
+      - 'pyproject.toml'
+      - '.github/workflows/scan-artifact-manifest.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/cy16boot/artifact_manifest.py'
+      - 'src/cy16boot/scan.py'
+      - 'spec/**'
+      - 'examples/scan_artifact_v1/**'
+      - 'tests/test_artifact_manifest.py'
+      - 'pyproject.toml'
+      - '.github/workflows/scan-artifact-manifest.yml'
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pycparser
+          pip install -e .
+      - name: Run full validation suite
+        run: pytest -q
+      - name: Generate canonical manifest bundle
+        run: |
+          mkdir -p build/scan-artifact-v1
+          cy16-as examples/setup_stub.s \
+            -o build/scan-artifact-v1/setup_stub.bin \
+            --base 0x1000 \
+            --lst build/scan-artifact-v1/setup_stub.lst \
+            --map build/scan-artifact-v1/setup_stub.map
+          cy16-scanwrap \
+            build/scan-artifact-v1/setup_stub.bin \
+            build/scan-artifact-v1/setup_stub.scan \
+            0x1000
+          cy16-scan-manifest create \
+            build/scan-artifact-v1/setup_stub.bin \
+            build/scan-artifact-v1/setup_stub.scan \
+            build/scan-artifact-v1/setup_stub.manifest.json \
+            --load-address 0x1000 \
+            --entry-point 0x1000 \
+            --execution-model bios-cooperative \
+            --target-device CY7C67200 \
+            --producer-repository mark-e-deyoung/CY16-bootstrap \
+            --producer-commit "$GITHUB_SHA" \
+            --constraint "Requires BIOS LCP CALL support." \
+            --provenance-note "Clean-room setup-stub validation fixture."
+          cy16-scan-manifest validate \
+            build/scan-artifact-v1/setup_stub.manifest.json
+      - name: Verify canonical byte anchors
+        run: |
+          test "$(stat -c %s build/scan-artifact-v1/setup_stub.bin)" = "8"
+          test "$(sha256sum build/scan-artifact-v1/setup_stub.bin | cut -d' ' -f1)" = \
+            "fe76c3f54ae4d60c0cfa95df2e6cbf1832a3848d1051d060ba903b9f5e598322"
+          test "$(stat -c %s build/scan-artifact-v1/setup_stub.scan)" = "55"
+          test "$(sha256sum build/scan-artifact-v1/setup_stub.scan | cut -d' ' -f1)" = \
+            "125f299ca63447f56581cda452a878ba3c3189b6afb7bfd15917bedd44afc28c"
