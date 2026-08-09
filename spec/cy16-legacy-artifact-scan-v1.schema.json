@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mark-e-deyoung/CY16-bootstrap/spec/cy16-legacy-artifact-scan-v1.schema.json",
+  "title": "CY16 Legacy Artifact Scan Report v1",
+  "description": "Deterministic inventory report for local CY16, CY7C67200/CY7C67300, CY3663, CY4640, and related Xilinx artifact searches.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "scanner",
+    "roots",
+    "fingerprints",
+    "summary",
+    "matches",
+    "errors"
+  ],
+  "properties": {
+    "schema": {
+      "const": "cy16-legacy-artifact-scan/v1"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inspect_archives", "content_scan", "content_max_bytes"],
+      "properties": {
+        "inspect_archives": {"type": "boolean"},
+        "content_scan": {"type": "boolean"},
+        "content_max_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "fingerprints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_symbol", "file_name", "path_fragment"],
+      "properties": {
+        "content_symbol": {"$ref": "#/$defs/stringArray"},
+        "file_name": {"$ref": "#/$defs/stringArray"},
+        "path_fragment": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files_scanned", "archives_inspected", "matches", "errors"],
+      "properties": {
+        "files_scanned": {"type": "integer", "minimum": 0},
+        "archives_inspected": {"type": "integer", "minimum": 0},
+        "matches": {"type": "integer", "minimum": 0},
+        "errors": {"type": "integer", "minimum": 0}
+      }
+    },
+    "matches": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/match"}
+    },
+    "errors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/error"}
+    }
+  },
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "sha256OrNull": {
+      "anyOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        {"type": "null"}
+      ]
+    },
+    "crc32OrNull": {
+      "anyOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{8}$"},
+        {"type": "null"}
+      ]
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "location",
+        "container",
+        "kind",
+        "fingerprint_class",
+        "fingerprint",
+        "size",
+        "sha256",
+        "archive_member_crc32"
+      ],
+      "properties": {
+        "root": {"type": "string", "minLength": 1},
+        "location": {"type": "string", "minLength": 1},
+        "container": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "kind": {
+          "enum": ["file", "zip-member", "tar-member"]
+        },
+        "fingerprint_class": {
+          "enum": ["file_name", "path_fragment", "content_symbol"]
+        },
+        "fingerprint": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256OrNull"},
+        "archive_member_crc32": {"$ref": "#/$defs/crc32OrNull"}
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "error"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "error": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
