@@ -5,70 +5,49 @@ from pathlib import Path
 import pytest
 
 from cy16boot.asm import assemble, write_listing
+from cy16boot.common import Cy16Error
 from cy16boot.isa import RET_WORD
 
 
-def word_addresses(source: str, base: int = 0) -> list[int]:
-    _, words, _ = assemble(source, base=base)
-    return [word.addr for word in words]
-
-
-def test_one_byte_directive_places_next_label_and_word_at_plus_two() -> None:
+def test_existing_flat_byte_directive_packing_is_preserved() -> None:
     image, words, symbols = assemble(
-        ".org 0x1000\n.byte 0xaa\nnext:\n    ret\n"
+        ".org 0x1000\n"
+        "label:\n"
+        ".ascii \"A,\\n\"\n"
+        ".asciz \"B\"\n"
+        ".space 3, 0x55\n"
+        ".skip 1\n"
     )
-    assert symbols["next"] == 0x1002
-    assert [word.addr for word in words] == [0x1000, 0x1002]
-    assert [word.value for word in words] == [0x00AA, RET_WORD]
-    assert image == bytes((0xAA, 0x00, RET_WORD & 0xFF, RET_WORD >> 8))
+    assert symbols["label"] == 0x1000
+    assert image == b"A,\nB\x00UUU\x00\x00"
+    assert [word.addr for word in words] == [
+        0x1000,
+        0x1002,
+        0x1003,
+        0x1005,
+        0x1007,
+        0x1008,
+    ]
 
 
 @pytest.mark.parametrize(
-    "directive, expected_prefix, expected_label",
+    "statement",
     [
-        ('.ascii "ABC"', b"ABC\x00", 0x1004),
-        ('.asciz "AB"', b"AB\x00\x00", 0x1004),
-        ('.space 3, 0x5a', b"\x5a\x5a\x5a\x00", 0x1004),
-        ('.skip 1', b"\x00\x00", 0x1002),
+        "ret",
+        ".word 0x1234",
+        ".short 0x1234",
+        "mov r0, 1",
+        "addi r0, 1",
+        "jmp 0x1000",
+        "call 0x1000",
     ],
 )
-def test_odd_byte_or_space_directives_use_same_padding_policy(
-    directive: str,
-    expected_prefix: bytes,
-    expected_label: int,
-) -> None:
-    image, words, symbols = assemble(
-        f".org 0x1000\n{directive}\nnext:\n    ret\n"
-    )
-    assert symbols["next"] == expected_label
-    assert words[-1].addr == expected_label
-    assert words[-1].value == RET_WORD
-    assert image[: len(expected_prefix)] == expected_prefix
+def test_word_statement_after_odd_byte_count_fails_closed(statement: str) -> None:
+    with pytest.raises(Cy16Error, match="word statement starts at odd address"):
+        assemble(f".org 0x1000\n.byte 0xaa\n{statement}\n")
 
 
-@pytest.mark.parametrize(
-    "directive, expected_size",
-    [
-        ('.byte 0x11, 0x22', 2),
-        ('.ascii "AB"', 2),
-        ('.asciz "A"', 2),
-        ('.space 4', 4),
-        ('.skip 2, 0xff', 2),
-    ],
-)
-def test_even_directive_sizes_are_unchanged(
-    directive: str,
-    expected_size: int,
-) -> None:
-    image, words, symbols = assemble(
-        f".org 0x1000\n{directive}\nnext:\n    ret\n"
-    )
-    assert symbols["next"] == 0x1000 + expected_size
-    assert words[-1].addr == 0x1000 + expected_size
-    assert len(image) == expected_size + 2
-
-
-def test_consecutive_odd_directives_do_not_overlap() -> None:
+def test_two_single_byte_directives_pack_and_restore_alignment() -> None:
     image, words, symbols = assemble(
         ".org 0x1000\n"
         ".byte 0x11\n"
@@ -76,18 +55,41 @@ def test_consecutive_odd_directives_do_not_overlap() -> None:
         "next:\n"
         "    ret\n"
     )
-    assert symbols["next"] == 0x1004
-    assert [word.addr for word in words] == [0x1000, 0x1002, 0x1004]
-    assert image == bytes(
-        (0x11, 0x00, 0x22, 0x00, RET_WORD & 0xFF, RET_WORD >> 8)
+    assert symbols["next"] == 0x1002
+    assert [word.addr for word in words] == [0x1000, 0x1001, 0x1002]
+    assert image == bytes((0x11, 0x22, RET_WORD & 0xFF, RET_WORD >> 8))
+
+
+def test_string_plus_explicit_pad_allows_following_instruction() -> None:
+    image, words, symbols = assemble(
+        ".org 0x1000\n"
+        ".ascii \"ABC\"\n"
+        ".byte 0\n"
+        "next:\n"
+        "    ret\n"
     )
+    assert symbols["next"] == 0x1004
+    assert words[-1].addr == 0x1004
+    assert image == b"ABC\x00" + bytes((RET_WORD & 0xFF, RET_WORD >> 8))
 
 
-def test_absolute_jump_extension_uses_actual_padded_label() -> None:
+def test_odd_data_label_remains_valid_when_no_word_statement_follows() -> None:
+    image, words, symbols = assemble(
+        ".org 0x2000\n"
+        ".byte 0xaa\n"
+        "odd_data:\n"
+        ".byte 0xbb\n"
+    )
+    assert symbols["odd_data"] == 0x2001
+    assert [word.addr for word in words] == [0x2000, 0x2001]
+    assert image == b"\xaa\xbb\x00"
+
+
+def test_absolute_target_uses_actual_flat_byte_layout() -> None:
     image, words, symbols = assemble(
         ".org 0x1000\n"
         "    jmp target\n"
-        ".byte 0xaa\n"
+        ".byte 0xaa, 0x00\n"
         "target:\n"
         "    ret\n"
     )
@@ -99,15 +101,16 @@ def test_absolute_jump_extension_uses_actual_padded_label() -> None:
     assert len(image) == 8
 
 
-def test_listing_and_symbol_addresses_agree(tmp_path: Path) -> None:
+def test_listing_and_symbol_addresses_agree_after_packed_bytes(tmp_path: Path) -> None:
     _, words, symbols = assemble(
-        ".org 0x2000\n.ascii \"XYZ\"\nnext:\n    ret\n"
+        ".org 0x2000\n"
+        ".byte 0x11\n"
+        ".byte 0x22\n"
+        "next:\n"
+        "    ret\n"
     )
     listing = tmp_path / "layout.lst"
     write_listing(listing, words)
     lines = listing.read_text(encoding="utf-8").splitlines()
-    assert symbols["next"] == 0x2004
-    assert lines[-1].startswith("2004:")
-    assert word_addresses(
-        ".org 0x2000\n.ascii \"XYZ\"\nnext:\n    ret\n"
-    )[-1] == symbols["next"]
+    assert symbols["next"] == 0x2002
+    assert lines[-1].startswith("2002:")
