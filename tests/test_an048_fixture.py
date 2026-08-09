@@ -18,7 +18,7 @@ def test_an048_clean_room_fixture_compile_simulate_and_scanwrap():
     initial_regs = [0] * 16
     initial_regs[15] = 0xF000
 
-    cpu, _ = run(
+    cpu, trace = run(
         image,
         base=0x1000,
         pc=entry,
@@ -26,6 +26,7 @@ def test_an048_clean_room_fixture_compile_simulate_and_scanwrap():
         initial_regs=initial_regs,
     )
 
+    assert not any(line.startswith("ERROR:") for line in trace), trace
     assert cpu.readw(0xC03A) == 0x23B3
     assert cpu.regs[0] == 0x23B3
 
