@@ -268,6 +268,49 @@ def _archive_budget_error(
     )
 
 
+def _zip_match(
+    root: Path,
+    container: str,
+    member: str,
+    info: zipfile.ZipInfo,
+    fingerprint_class: str,
+    fingerprint: str,
+    digest: str | None,
+) -> Match:
+    return Match(
+        root=root.resolve().as_posix(),
+        location=member,
+        container=container,
+        kind="zip-member",
+        fingerprint_class=fingerprint_class,
+        fingerprint=fingerprint,
+        size=info.file_size,
+        sha256=digest,
+        archive_member_crc32=f"{info.CRC:08x}",
+    )
+
+
+def _tar_match(
+    root: Path,
+    container: str,
+    member: str,
+    info: tarfile.TarInfo,
+    fingerprint_class: str,
+    fingerprint: str,
+    digest: str | None,
+) -> Match:
+    return Match(
+        root=root.resolve().as_posix(),
+        location=member,
+        container=container,
+        kind="tar-member",
+        fingerprint_class=fingerprint_class,
+        fingerprint=fingerprint,
+        size=info.size,
+        sha256=digest,
+    )
+
+
 def _scan_zip(
     path: Path,
     root: Path,
@@ -310,6 +353,18 @@ def _scan_zip(
             )
             if should_read:
                 if cumulative_read + info.file_size > archive_max_read_bytes:
+                    for fingerprint_class, fingerprint in sorted(set(name_hits)):
+                        found.append(
+                            _zip_match(
+                                root,
+                                container,
+                                member,
+                                info,
+                                fingerprint_class,
+                                fingerprint,
+                                None,
+                            )
+                        )
                     errors.append(
                         _archive_budget_error(
                             container,
@@ -339,16 +394,14 @@ def _scan_zip(
                 set(name_hits + content_hits)
             ):
                 found.append(
-                    Match(
-                        root=root.resolve().as_posix(),
-                        location=member,
-                        container=container,
-                        kind="zip-member",
-                        fingerprint_class=fingerprint_class,
-                        fingerprint=fingerprint,
-                        size=info.file_size,
-                        sha256=digest,
-                        archive_member_crc32=f"{info.CRC:08x}",
+                    _zip_match(
+                        root,
+                        container,
+                        member,
+                        info,
+                        fingerprint_class,
+                        fingerprint,
+                        digest,
                     )
                 )
     return ArchiveResult(found, errors, False)
@@ -399,6 +452,18 @@ def _scan_tar(
             )
             if should_read:
                 if cumulative_read + info.size > archive_max_read_bytes:
+                    for fingerprint_class, fingerprint in sorted(set(name_hits)):
+                        found.append(
+                            _tar_match(
+                                root,
+                                container,
+                                member,
+                                info,
+                                fingerprint_class,
+                                fingerprint,
+                                None,
+                            )
+                        )
                     errors.append(
                         _archive_budget_error(
                             container,
@@ -429,15 +494,14 @@ def _scan_tar(
                 set(name_hits + content_hits)
             ):
                 found.append(
-                    Match(
-                        root=root.resolve().as_posix(),
-                        location=member,
-                        container=container,
-                        kind="tar-member",
-                        fingerprint_class=fingerprint_class,
-                        fingerprint=fingerprint,
-                        size=info.size,
-                        sha256=digest,
+                    _tar_match(
+                        root,
+                        container,
+                        member,
+                        info,
+                        fingerprint_class,
+                        fingerprint,
+                        digest,
                     )
                 )
 
@@ -546,15 +610,23 @@ def scan_roots(
         for path in candidates:
             scanned_files += 1
             try:
+                archive_kind = _archive_kind(path)
+                # When archives are inspected, all content searching/hashing of
+                # their members must pass through the per-archive budgets. A raw
+                # container-byte scan could otherwise reveal later members and
+                # bypass those limits. Filename matching on the container itself
+                # is still retained.
+                regular_content_scan = content_scan and not (
+                    inspect_archives and archive_kind is not None
+                )
                 matches.extend(
                     _scan_regular_file(
                         path,
                         root_base,
-                        content_scan=content_scan,
+                        content_scan=regular_content_scan,
                         content_max_bytes=content_max_bytes,
                     )
                 )
-                archive_kind = _archive_kind(path)
                 if inspect_archives and archive_kind:
                     scanned_archives += 1
                     if archive_kind == "zip":
