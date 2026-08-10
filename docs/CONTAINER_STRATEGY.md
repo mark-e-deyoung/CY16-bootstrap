@@ -31,8 +31,9 @@ Contains only build/test dependencies:
 - Python + pip/setuptools/wheel;
 - pytest and pycparser.
 
-It installs the CY16 Python package, builds the chibicc-derived C binary, and
-stages only runtime Python files under `/runtime-root`.
+It builds one CY16 Python wheel, installs that exact wheel into the builder for
+validation, stages the same wheel under `/runtime-root`, and builds the
+chibicc-derived C binary.
 
 ### `test`
 
@@ -154,22 +155,34 @@ validation.
 | Capability | Windows | Linux | macOS (future) |
 |---|---|---|---|
 | Source/agent work | first-class | first-class | expected; not validated here |
-| Canonical Docker build/test/runtime | first-class | first-class | expected through Docker Desktop; not validated here |
+| Canonical Docker build/test/runtime | first-class design; Docker Desktop validation still needed | validated on Ubuntu 24.04 CI | expected through Docker Desktop; not validated here |
 | Native Python-only tools | supported | supported | expected |
 | Native full C compiler ladder | optional; environment-dependent | supported with GCC/make | not validated |
 
 No macOS success claim is made because there is no Mac available for project
 validation. The architecture intentionally avoids Windows/Linux-specific paths
-so a future Mac should require only wrapper/volume verification rather than a
-new toolchain design.
+so a future Mac should require wrapper/volume verification rather than a new
+toolchain design.
 
 ## Reproducibility boundary
 
-The container removes host-OS variance, but the current Debian base tag is still
-a mutable upstream tag. Before publishing a long-lived shared GHCR runtime image,
-pin the reviewed multi-architecture base digest and record the image provenance.
-Do not invent or copy a digest without validating it against the local Docker
-builder/target platforms.
+The Docker base is pinned to the reviewed Debian manifest digest used by the
+successful Linux validation run:
+
+```text
+debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258
+```
+
+GitHub Actions dependencies are also commit-pinned. The validated Linux runtime
+image was 109.4 MiB, defaulted to a non-root user, declared no persistent volume,
+and passed the locked-down portable-wrapper smoke test.
+
+This is reproducible at the base-image/source level, but it is not yet a
+bit-for-bit hermetic package build: `apt-get` still resolves Debian packages from
+the active Trixie repositories at image-build time. If byte-for-byte rebuilds
+become necessary, add an explicit Debian snapshot/package lock rather than
+silently depending on current repository state. Linux amd64 is validated today;
+other CPU architectures and macOS Docker behavior are not yet claimed.
 
 Container changes must not alter CY16 ISA/ABI, assembler, simulator, SCAN, or
 compiler semantics merely to make image construction convenient.
