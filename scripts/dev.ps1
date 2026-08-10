@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $py = Get-Command py -ErrorAction SilentlyContinue
 if ($py) {
-    & py -3 "$PSScriptRoot\dev.py" bootstrap @args
+    & py -3 "$PSScriptRoot\dev.py" @args
     exit $LASTEXITCODE
 }
 
@@ -12,5 +12,5 @@ if (-not $python) {
     exit 2
 }
 
-& python "$PSScriptRoot\dev.py" bootstrap @args
+& python "$PSScriptRoot\dev.py" @args
 exit $LASTEXITCODE
