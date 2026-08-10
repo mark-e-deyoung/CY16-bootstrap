@@ -145,3 +145,30 @@ jobs:
           Write-Host $text
           if ($process.ExitCode -notin @(0,2)) { throw "unexpected doctor exit code $($process.ExitCode)" }
           if ($text -notmatch 'Repository:' -or $text -notmatch 'Host:') { throw 'doctor did not produce expected diagnostic surface' }
+
+  macos-launcher-surface:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Validate POSIX and Python launchers
+        run: |
+          sh -n scripts/dev.sh
+          test -x scripts/dev.sh
+          python3 -m py_compile scripts/dev.py
+          ./scripts/dev.sh --help
+
+      - name: Validate doctor diagnostic surface without Docker Desktop
+        run: |
+          set +e
+          output=$(./scripts/dev.sh doctor 2>&1)
+          code=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$code" -eq 2 -o "$code" -eq 0
+          printf '%s\n' "$output" | grep -F 'Repository:'
+          printf '%s\n' "$output" | grep -F 'Host:'
