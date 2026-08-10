@@ -1,0 +1,23 @@
+# Default-deny the Docker build context. Only files consumed by the toolchain
+# build/test stages are sent to the daemon.
+**
+
+!Dockerfile
+!Makefile
+!pyproject.toml
+!README.md
+!src/**
+!include/**
+!libcy16/**
+!examples/**
+!tests/**
+!test*.py
+!test*.c
+!test*.s
+!run_chibicc_test.py
+!run_test_v0.py
+
+# Tracked/generated compiler artifacts are never build inputs.
+src/**/*.o
+src/**/*.orig
+src/**/*.rej
