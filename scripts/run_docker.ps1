@@ -1,10 +1,16 @@
-# Helper script to run the CY16 toolchain via Docker on Windows
+$ErrorActionPreference = 'Stop'
 
-# Ensure the build directory exists locally so Docker can write to it if needed
-if (-not (Test-Path "build")) {
-    New-Item -ItemType Directory -Force -Path "build"
+$py = Get-Command py -ErrorAction SilentlyContinue
+if ($py) {
+    & py -3 "$PSScriptRoot\dev.py" tool cy16-cc @args
+    exit $LASTEXITCODE
 }
 
-# Run the container with the current directory mapped to /work
-# Passing all script arguments directly to the container's entrypoint (cy16-cc)
-docker run --rm -v "${PWD}:/work" cy16-toolchain $args
+$python = Get-Command python -ErrorAction SilentlyContinue
+if (-not $python) {
+    Write-Error "Python 3 is required. Install Python and rerun this command."
+    exit 2
+}
+
+& python "$PSScriptRoot\dev.py" tool cy16-cc @args
+exit $LASTEXITCODE
