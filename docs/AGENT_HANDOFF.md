@@ -2,6 +2,12 @@
 
 This is the durable entrypoint for a fresh local agent. Mutable project state lives in GitHub; refresh it at session start rather than relying on prior chat.
 
+## Bootstrap state
+
+Until handoff PR #20 is merged, launch the local agent from branch `docs/local-agent-handoff` so root `CLAUDE.md` is present and automatically imports this file. After PR #20 is merged, start from the repository's normal default checkout and follow `CLAUDE.md`.
+
+Do not copy these handoff files manually into older task branches. Keep this handoff branch as the bootstrap/control worktree and perform integration in the dedicated issue #8 worktree below.
+
 ## Start here
 
 1. Run:
@@ -36,7 +42,7 @@ The canonical dependency map is issue **#8**. Current principal branches are:
 - **PR #6 / PR #15** — SCAN artifact manifest producer plus metadata-only self-consistency hardening.
 - **PR #9 / PR #17** — legacy artifact scanner plus symlink containment/archive budgets.
 - **#18** — later wraparound regression/model decision. A prior session described equivalent work as completed, but no durable issue/PR/branch/commit existed; #18 is the authoritative recovery point.
-- **#19** — this handoff preparation.
+- **#19 / PR #20** — this handoff preparation.
 
 Cross-repository source gates remain in `SemperSupra/DE2-115`: SCAN JUMP issue #48 and SCAN INT issue #51. Do not infer either behavior during CY16 conflict resolution.
 
