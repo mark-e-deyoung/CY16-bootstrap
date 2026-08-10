@@ -22,32 +22,65 @@ Expected CY16 words:
 0x07e7 0x23b3 0xc03a 0xcf97
 ```
 
-## Current status
+## Current project state
 
-As of 2026-05-11, `main` is the green integration baseline at commit `50e642a`.
+For mutable integration status, use root `CLAUDE.md`, `docs/AGENT_HANDOFF.md`,
+and GitHub issue #8 rather than an old README commit snapshot. The developer
+and container environment contract is `docs/CONTAINER_STRATEGY.md`.
 
-- Local Docker validation command: `docker build -t cy16-ladder .`
-- Last green local result: `23 passed`
-- Last green GitHub Actions run on `main`: `25679773430`
-- Next bring-up rung: Phase 9 static locals
-- Current handoff notes: `HANDOFF.md`
-- Bring-up sequencing and delegation plan: `docs/ORCHESTRATION_PLAN.md`
+## Portable quick start
 
-## Quick start
+The canonical Windows/Linux path uses the project container. A new machine needs
+Git, Python 3.10+, and Docker; GitHub CLI is also required for the local-agent
+handoff workflow.
+
+Windows PowerShell:
+
+```powershell
+.\scripts\dev.ps1 doctor
+.\scripts\dev.ps1 bootstrap
+.\scripts\dev.ps1 tool cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000 --lst build/setup_stub.lst --map build/setup_stub.map
+.\scripts\dev.ps1 tool cy16-dis build/setup_stub.bin --base 0x1000
+.\scripts\dev.ps1 tool cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --max-steps 4
+```
+
+Linux/POSIX shell:
+
+```bash
+./scripts/dev.sh doctor
+./scripts/dev.sh bootstrap
+./scripts/dev.sh tool cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000 --lst build/setup_stub.lst --map build/setup_stub.map
+./scripts/dev.sh tool cy16-dis build/setup_stub.bin --base 0x1000
+./scripts/dev.sh tool cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --max-steps 4
+```
+
+`bootstrap` builds the isolated Docker `test` target and then the minimal runtime
+image. Runtime commands use a read-only repository mount, a writable `build/`
+submount, no network, a read-only container root, dropped capabilities, and
+`--rm`; no background or persistent container is required.
+
+The compiled chibicc-derived binary is exposed separately as `cy16-chibicc`.
+The Python project compiler remains `cy16-cc`; the two names must not overwrite
+each other.
+
+### Optional native Python path
+
+A native venv is still useful for Python-only iteration:
 
 ```bash
 python -m venv .venv
-. .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate  # Windows PowerShell equivalent
-pip install -e . pytest
+# Linux/macOS: . .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install -e . pytest pycparser
 pytest -q
-
-cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000 --lst build/setup_stub.lst --map build/setup_stub.map
-cy16-dis build/setup_stub.bin --base 0x1000
-cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --max-steps 4
-cy16-scanwrap build/setup_stub.bin build/setup_stub.scan 0x1000
-cy16-scan-decode build/setup_stub.scan
 ```
+
+A full native compiler validation also requires a compatible C compiler and
+`make`, so the container path is preferred when moving between Windows and Linux
+machines.
+
+macOS is an intended future source/container host, but it is not currently
+validated because no Mac is available for this project.
 
 ## Package contents
 
@@ -57,10 +90,12 @@ cy16-scan-decode build/setup_stub.scan
 - `docs/ABI_V0.md` — initial CY16 C ABI.
 - `docs/ASM_SUBSET.md` — bootstrap assembler syntax and limitations.
 - `docs/SCAN_FORMAT.md` — SCAN record model.
+- `docs/CONTAINER_STRATEGY.md` — cross-platform DX and stateless/minimal container contract.
 - `prompts/AGENT_BOOTSTRAP_PROMPT.md` — one-shot prompt for Codex CLI, Gemini CLI, or Jules.
 - `src/cy16boot/` — bootstrap Python tools.
 - `src/cy16cc/` — chibicc-derived compiler port and CY16 backend.
 - `libcy16/` — startup/runtime/linker-script seed files.
+- `scripts/dev.py` — portable Windows/Linux host wrapper.
 - `scripts/vendor_chibicc.sh` — pins and vendors chibicc.
 - `tests/` — pytest tests.
 
