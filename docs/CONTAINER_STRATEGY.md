@@ -2,8 +2,8 @@
 
 This document is the authoritative container/DX contract for CY16-bootstrap.
 The canonical cross-platform path is a disposable Linux container so the same
-compiler/test environment can be used from Windows and Linux hosts without
-installing a native C toolchain on every machine.
+compiler/test environment can be used from Windows, Linux, and eventually macOS
+hosts without installing a native C toolchain on every machine.
 
 ## Host contract
 
@@ -11,12 +11,12 @@ Normal development host prerequisites are deliberately small:
 
 - Git;
 - Python 3.10+ for the repo launcher and agent preflight;
-- Docker Engine on Linux or Docker Desktop on Windows;
+- Docker Engine on Linux or Docker Desktop on Windows/macOS;
 - GitHub CLI when doing agent/GitHub workflow work.
 
 The repository does not silently install privileged system packages. A fresh
 machine runs `scripts/dev.py doctor`, installs only the missing host basics, then
-runs `scripts/dev.py bootstrap`.
+runs `scripts/dev.py bootstrap` once a supported container runtime is available.
 
 ### Optional shared workstation bootstrap
 
@@ -135,7 +135,7 @@ Windows PowerShell:
 .\scripts\dev.ps1 tool cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000
 ```
 
-Linux/POSIX shell:
+Linux/macOS POSIX shell:
 
 ```bash
 ./scripts/dev.sh doctor
@@ -144,7 +144,7 @@ Linux/POSIX shell:
 ./scripts/dev.sh tool cy16-as examples/setup_stub.s -o build/setup_stub.bin --base 0x1000
 ```
 
-Direct Python is equivalent on either platform:
+Direct Python is equivalent on each source host:
 
 ```text
 python scripts/dev.py bootstrap
@@ -153,6 +153,10 @@ python scripts/dev.py bootstrap
 Compatibility wrappers `scripts/bootstrap.ps1` and `scripts/bootstrap.sh`
 delegate to the same portable bootstrap. `scripts/run_docker.ps1` delegates to
 the locked-down `cy16-cc` runtime path.
+
+Linux container execution is validated. The Windows and macOS launchers are
+validated, but Docker Desktop project-container execution on those two OSes is a
+local-machine gate.
 
 ## Native development
 
@@ -170,17 +174,16 @@ validation.
 
 ## Platform support
 
-| Capability | Windows | Linux | macOS (future) |
+| Capability | Windows | Linux | macOS |
 |---|---|---|---|
-| Source/agent work | first-class | first-class | expected; not validated here |
-| Canonical Docker build/test/runtime | first-class design; Docker Desktop validation still needed | validated on Ubuntu 24.04 CI | expected through Docker Desktop; not validated here |
-| Native Python-only tools | supported | supported | expected |
-| Native full C compiler ladder | optional; environment-dependent | supported with GCC/make | not validated |
+| Source/agent launcher | validated PowerShell/Python surface | validated | validated POSIX/Python surface on hosted Mac |
+| Canonical Docker build/test/runtime | first-class design; Docker Desktop execution still needs local validation | validated on Ubuntu 24.04 CI | intended through Docker Desktop; project-container execution still needs local validation |
+| Native Python-only tools | supported | supported | launcher/import surface expected from same Python package |
+| Native full C compiler ladder | optional; environment-dependent | supported with GCC/make | not required or validated |
 
-No macOS success claim is made because there is no Mac available for project
-validation. The architecture intentionally avoids Windows/Linux-specific paths
-so a future Mac should require wrapper/volume verification rather than a new
-toolchain design.
+A hosted Mac now validates the project POSIX/Python launcher and diagnostic
+surface. No separate macOS compiler/toolchain design is planned; the remaining
+macOS work is container-runtime/volume behavior on an actual development Mac.
 
 ## Reproducibility boundary
 
@@ -199,8 +202,9 @@ This is reproducible at the base-image/source level, but it is not yet a
 bit-for-bit hermetic package build: `apt-get` still resolves Debian packages from
 the active Trixie repositories at image-build time. If byte-for-byte rebuilds
 become necessary, add an explicit Debian snapshot/package lock rather than
-silently depending on current repository state. Linux amd64 is validated today;
-other CPU architectures and macOS Docker behavior are not yet claimed.
+silently depending on current repository state. Linux amd64 is the fully
+validated container target today; Windows/macOS Docker behavior and other CPU
+architectures are not yet claimed.
 
 Container changes must not alter CY16 ISA/ABI, assembler, simulator, SCAN, or
 compiler semantics merely to make image construction convenient.
