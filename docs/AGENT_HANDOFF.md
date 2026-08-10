@@ -47,7 +47,8 @@ The canonical dependency map is issue **#8**. Current principal branches are:
 - **PR #9 / PR #17** — legacy artifact scanner plus symlink containment/archive budgets.
 - **#18** — later wraparound regression/model decision. A prior session described equivalent work as completed, but no durable issue/PR/branch/commit existed; #18 is the authoritative recovery point.
 - **PR #20 / PR #22** — merged repository handoff and fail-closed preflight hardening now present on `main`.
-- **#23** — hosted-CI budget/path-filter policy; full validation remains available manually.
+- **#23 / PR #24** — merged CI path-filter policy; full validation remains available manually and still runs automatically for relevant code/build/test changes.
+- **#25** — correction of public-repository Actions billing guidance.
 
 Cross-repository source gates remain in `SemperSupra/DE2-115`: SCAN JUMP issue #48 and SCAN INT issue #51. Do not infer either behavior during CY16 conflict resolution.
 
@@ -117,18 +118,18 @@ Do not restore the rejected per-directive automatic-padding experiment.
 
 After both sets of changes are present, run the complete parent suite plus PR #13's focused layout tests. Inspect the reduced diff. Open a draft integration PR targeting `agent/cy16-source-conformance-and-an048`; do not merge the GitHub PR unless explicitly authorized by the active integration task.
 
-## Hosted Actions budget
+## GitHub Actions policy
 
-Current operator constraint, recorded **2026-08-10**: hosted GitHub Actions minutes are exhausted for the remainder of August on the current free-tier budget.
+Verified against current GitHub billing documentation on **2026-08-10**: standard GitHub-hosted runners are free for **public repositories**. `mark-e-deyoung/CY16-bootstrap` is public and the validation ladder uses standard `ubuntu-latest`.
 
-Until that constraint is explicitly cleared:
+Therefore:
 
-- local validation is authoritative for agent work;
-- do not intentionally dispatch hosted workflows merely to prove a change;
-- when an issue or PR says “rerun CI/workflow,” reproduce the workflow commands locally and record exact commands/results in the draft PR;
-- the main `CY16 Validation Ladder` is path-filtered so documentation/project-memory changes do not launch the full ladder, while source/build/test inputs still do;
-- `workflow_dispatch` remains available for deliberate later runs;
-- before relying on hosted Actions in a later session, verify the current budget rather than assuming this dated constraint is still active.
+- local baseline/affected/full validation remains required before significant integration pushes;
+- allow the path-filtered workflow to run automatically for qualifying source/build/test changes and use it as independent validation;
+- documentation/project-memory-only changes remain filtered out to avoid unnecessary work, even though standard public-repo runner minutes are free;
+- `workflow_dispatch` remains available for deliberate validation when there is an engineering reason to run it;
+- larger runners remain separately billable and must not be introduced casually;
+- the user's exhausted included minutes still matter for **private** repositories, so re-check repository visibility and runner type before applying this policy elsewhere.
 
 ## Next tasks after the parent integration is accepted
 
