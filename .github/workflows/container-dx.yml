@@ -133,6 +133,7 @@ jobs:
       - name: Validate doctor diagnostic surface without requiring Docker Desktop
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Continue'
           $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 doctor 2>&1
           $code = $LASTEXITCODE
           $text = ($output | ForEach-Object { "$_" }) -join "`n"
