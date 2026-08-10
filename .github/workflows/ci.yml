@@ -3,8 +3,53 @@ name: CY16 Validation Ladder
 on:
   push:
     branches: [ main ]
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'Dockerfile'
+      - 'Makefile'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'include/**'
+      - 'libcy16/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'codegen_rewrite.py'
+      - 'run_chibicc_test.py'
+      - 'run_test_v0.py'
+      - 'test*.py'
+      - 'test*.c'
+      - 'test*.s'
+      - 'chibicc'
+      - 'cy16_codegen.o'
+      - 'scripts/bootstrap.ps1'
+      - 'scripts/run_docker.ps1'
+      - 'scripts/run_smoke.sh'
+      - 'scripts/vendor_chibicc.sh'
   pull_request:
     branches: [ main ]
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'Dockerfile'
+      - 'Makefile'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'include/**'
+      - 'libcy16/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'codegen_rewrite.py'
+      - 'run_chibicc_test.py'
+      - 'run_test_v0.py'
+      - 'test*.py'
+      - 'test*.c'
+      - 'test*.s'
+      - 'chibicc'
+      - 'cy16_codegen.o'
+      - 'scripts/bootstrap.ps1'
+      - 'scripts/run_docker.ps1'
+      - 'scripts/run_smoke.sh'
+      - 'scripts/vendor_chibicc.sh'
+  workflow_dispatch:
 
 jobs:
   build:
