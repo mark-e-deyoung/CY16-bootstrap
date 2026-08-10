@@ -40,11 +40,14 @@ on:
       - '.github/workflows/container-dx.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   container-dx:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Syntax check portable launcher
         run: python3 -m py_compile scripts/dev.py
@@ -66,7 +69,7 @@ jobs:
       - name: Enforce runtime shape
         run: |
           python3 - <<'PY'
-          import json, subprocess, sys
+          import json, subprocess
           raw = subprocess.check_output(['docker', 'image', 'inspect', 'cy16-bootstrap:ci'], text=True)
           image = json.loads(raw)[0]
           cfg = image['Config']
