@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
+ARG DEBIAN_BASE="debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258"
+
 # Build-only dependencies never enter the runtime image.
-FROM debian:trixie-slim AS builder
+FROM ${DEBIAN_BASE} AS builder
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc \
@@ -27,12 +29,16 @@ COPY test*.c ./
 COPY test*.s ./
 COPY run_chibicc_test.py run_test_v0.py ./
 
-# Install the Python CLIs into the builder for validation, and separately stage
-# only their runtime files under /runtime-root for the final image.
-RUN python3 -m pip install --break-system-packages --no-build-isolation --no-deps . \
-    && rm -rf /runtime-root \
-    && python3 -m pip install --break-system-packages --no-build-isolation --no-deps \
-         --root=/runtime-root .
+# Build one wheel, use that exact wheel for the builder validation environment,
+# and stage the same bytes for the final runtime. --ignore-installed prevents the
+# staging install from uninstalling the builder's test copy.
+RUN rm -rf /dist /runtime-root \
+    && mkdir -p /dist \
+    && python3 -m pip wheel --break-system-packages --no-build-isolation --no-deps \
+         --wheel-dir=/dist . \
+    && python3 -m pip install --break-system-packages --no-deps /dist/*.whl \
+    && python3 -m pip install --break-system-packages --no-deps --ignore-installed \
+         --root=/runtime-root /dist/*.whl
 
 RUN make clean && make CC=gcc
 
@@ -54,7 +60,7 @@ RUN pytest -q \
 # Runtime contains Python, pycparser, installed CY16 Python CLIs, and the
 # separately named compiled chibicc-derived binary. No compiler, make, pip,
 # source checkout, test suite, or implicit volume is retained.
-FROM debian:trixie-slim AS runtime
+FROM ${DEBIAN_BASE} AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-minimal \
