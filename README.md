@@ -59,9 +59,10 @@ image. Runtime commands use a read-only repository mount, a writable `build/`
 submount, no network, a read-only container root, dropped capabilities, and
 `--rm`; no background or persistent container is required.
 
-Linux Docker execution is validated end-to-end. Windows and macOS launcher and
-diagnostic surfaces are validated on hosted runners; Docker Desktop project
-container execution on those hosts remains a local-machine validation gate.
+Linux Docker execution is validated end-to-end on native `amd64` and native
+`arm64` runners. Windows and macOS launcher and diagnostic surfaces are
+validated on hosted runners; Docker Desktop project-container execution on those
+hosts remains a local-machine validation gate.
 
 The compiled chibicc-derived binary is exposed separately as `cy16-chibicc`.
 The Python project compiler remains `cy16-cc`; the two names must not overwrite
@@ -83,9 +84,10 @@ A full native compiler validation also requires a compatible C compiler and
 `make`, so the container path is preferred when moving among development
 machines.
 
-A hosted Mac now validates the POSIX/Python project launcher. No separate macOS
-toolchain is planned; the remaining Mac-specific work is Docker Desktop/runtime
-and volume behavior on an actual development Mac.
+A hosted Mac validates the POSIX/Python project launcher, and native Linux ARM64
+validation covers the same project toolchain architecture used by Apple Silicon
+containers. No separate macOS toolchain is planned; the remaining Mac-specific
+work is Docker Desktop/runtime and volume behavior on an actual development Mac.
 
 ## Package contents
 
