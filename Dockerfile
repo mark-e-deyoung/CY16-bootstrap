@@ -34,8 +34,7 @@ COPY run_chibicc_test.py run_test_v0.py ./
 # staging install from uninstalling the builder's test copy.
 RUN rm -rf /dist /runtime-root \
     && mkdir -p /dist \
-    && python3 -m pip wheel --break-system-packages --no-build-isolation --no-deps \
-         --wheel-dir=/dist . \
+    && python3 -m pip wheel --no-build-isolation --no-deps --wheel-dir=/dist . \
     && python3 -m pip install --break-system-packages --no-deps /dist/*.whl \
     && python3 -m pip install --break-system-packages --no-deps --ignore-installed \
          --root=/runtime-root /dist/*.whl
