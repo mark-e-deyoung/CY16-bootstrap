@@ -133,10 +133,15 @@ jobs:
       - name: Validate doctor diagnostic surface without requiring Docker Desktop
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Continue'
-          $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 doctor 2>&1
-          $code = $LASTEXITCODE
-          $text = ($output | ForEach-Object { "$_" }) -join "`n"
+          $script = (Resolve-Path '.\scripts\dev.ps1').Path
+          $stdout = Join-Path $env:RUNNER_TEMP 'cy16-doctor.stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'cy16-doctor.stderr.txt'
+          $process = Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'doctor') `
+            -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $outText = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+          $errText = if (Test-Path $stderr) { Get-Content $stderr -Raw } else { '' }
+          $text = $outText + "`n" + $errText
           Write-Host $text
-          if ($code -notin @(0,2)) { throw "unexpected doctor exit code $code" }
+          if ($process.ExitCode -notin @(0,2)) { throw "unexpected doctor exit code $($process.ExitCode)" }
           if ($text -notmatch 'Repository:' -or $text -notmatch 'Host:') { throw 'doctor did not produce expected diagnostic surface' }
