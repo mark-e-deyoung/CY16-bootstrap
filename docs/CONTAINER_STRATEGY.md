@@ -158,6 +158,29 @@ Linux container execution is validated. The Windows and macOS launchers are
 validated, but Docker Desktop project-container execution on those two OSes is a
 local-machine gate.
 
+## Container architecture validation
+
+The CY16 build/test/runtime image has been exercised natively on both supported
+Linux CPU architectures:
+
+- `linux/amd64`: full Docker test/runtime path, 23 pytest tests, compiled
+  chibicc-derived compiler, runtime shape checks, CLI smoke, and locked-down
+  wrapper artifact generation;
+- `linux/arm64`: native `ubuntu-24.04-arm` runner built the isolated test image
+  and final runtime, verified the image reports `arm64`, enforced the non-root /
+  no-volume / size contract, and generated an artifact through the locked-down
+  wrapper.
+
+The ARM64 workflow is deliberately narrow so ordinary documentation edits do not
+require an additional full toolchain build. Native ARM64 validation substantially
+reduces future Apple Silicon risk, but it does not by itself validate Docker
+Desktop filesystem/volume behavior on macOS.
+
+If CY16 later publishes a reusable GHCR image, the package must not claim a
+multi-architecture tag until each advertised architecture is built and tested
+and a reviewed manifest list is created. A single-architecture push must not
+silently replace a tag consumers expect to be multi-architecture.
+
 ## Native development
 
 A native Python venv remains possible for contributors who deliberately want it:
@@ -177,34 +200,34 @@ validation.
 | Capability | Windows | Linux | macOS |
 |---|---|---|---|
 | Source/agent launcher | validated PowerShell/Python surface | validated | validated POSIX/Python surface on hosted Mac |
-| Canonical Docker build/test/runtime | first-class design; Docker Desktop execution still needs local validation | validated on Ubuntu 24.04 CI | intended through Docker Desktop; project-container execution still needs local validation |
+| Canonical Docker build/test/runtime | first-class design; Docker Desktop execution still needs local validation | validated natively on amd64 and arm64 | intended through Docker Desktop; project-container execution still needs local validation |
 | Native Python-only tools | supported | supported | launcher/import surface expected from same Python package |
 | Native full C compiler ladder | optional; environment-dependent | supported with GCC/make | not required or validated |
 
-A hosted Mac now validates the project POSIX/Python launcher and diagnostic
-surface. No separate macOS compiler/toolchain design is planned; the remaining
-macOS work is container-runtime/volume behavior on an actual development Mac.
+A hosted Mac validates the project POSIX/Python launcher and diagnostic surface.
+No separate macOS compiler/toolchain design is planned; the remaining macOS work
+is container-runtime/volume behavior on an actual development Mac.
 
 ## Reproducibility boundary
 
 The Docker base is pinned to the reviewed Debian manifest digest used by the
-successful Linux validation run:
+successful Linux validation runs:
 
 ```text
 debian:trixie-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258
 ```
 
-GitHub Actions dependencies are also commit-pinned. The validated Linux runtime
-image was 109.4 MiB, defaulted to a non-root user, declared no persistent volume,
-and passed the locked-down portable-wrapper smoke test.
+GitHub Actions dependencies are also commit-pinned. The validated amd64 runtime
+baseline was 109.4 MiB, defaulted to a non-root user, declared no persistent
+volume, and passed the locked-down portable-wrapper smoke test. ARM64 is subject
+to the same size ceiling and runtime-shape checks.
 
 This is reproducible at the base-image/source level, but it is not yet a
 bit-for-bit hermetic package build: `apt-get` still resolves Debian packages from
 the active Trixie repositories at image-build time. If byte-for-byte rebuilds
 become necessary, add an explicit Debian snapshot/package lock rather than
-silently depending on current repository state. Linux amd64 is the fully
-validated container target today; Windows/macOS Docker behavior and other CPU
-architectures are not yet claimed.
+silently depending on current repository state. Windows/macOS Docker behavior
+remains separate from the validated native Linux amd64/arm64 image targets.
 
 Container changes must not alter CY16 ISA/ABI, assembler, simulator, SCAN, or
 compiler semantics merely to make image construction convenient.
