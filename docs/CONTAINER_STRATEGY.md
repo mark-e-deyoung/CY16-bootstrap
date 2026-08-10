@@ -18,6 +18,24 @@ The repository does not silently install privileged system packages. A fresh
 machine runs `scripts/dev.py doctor`, installs only the missing host basics, then
 runs `scripts/dev.py bootstrap`.
 
+### Optional shared workstation bootstrap
+
+The reusable host-prerequisite layer is being developed in
+`SupraShellScripts/stateless-dev-tooling` issue #10 / PR #11. CY16-bootstrap does
+not depend on that repository and remains independently bootstrappable.
+
+When the shared tooling repository is present in the development workspace, the
+CY16 host profile is simply:
+
+```text
+base + container
+```
+
+The shared helper owns only host prerequisite/package-manager and container
+runtime discovery. CY16-bootstrap continues to own the compiler/test/runtime
+image, exact tool behavior, validation ladder, generated artifacts, and CY16
+semantics. Do not copy shared package-manager logic into this repository.
+
 ## Build stages
 
 The single `Dockerfile` has three roles:
