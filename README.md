@@ -30,9 +30,9 @@ and container environment contract is `docs/CONTAINER_STRATEGY.md`.
 
 ## Portable quick start
 
-The canonical Windows/Linux path uses the project container. A new machine needs
-Git, Python 3.10+, and Docker; GitHub CLI is also required for the local-agent
-handoff workflow.
+The canonical project environment is containerized. A new Windows, Linux, or
+macOS source host needs Git, Python 3.10+, and a supported Docker-compatible
+runtime; GitHub CLI is also required for the local-agent handoff workflow.
 
 Windows PowerShell:
 
@@ -44,7 +44,7 @@ Windows PowerShell:
 .\scripts\dev.ps1 tool cy16-sim build/setup_stub.bin --base 0x1000 --pc 0x1000 --max-steps 4
 ```
 
-Linux/POSIX shell:
+Linux/macOS POSIX shell:
 
 ```bash
 ./scripts/dev.sh doctor
@@ -58,6 +58,10 @@ Linux/POSIX shell:
 image. Runtime commands use a read-only repository mount, a writable `build/`
 submount, no network, a read-only container root, dropped capabilities, and
 `--rm`; no background or persistent container is required.
+
+Linux Docker execution is validated end-to-end. Windows and macOS launcher and
+diagnostic surfaces are validated on hosted runners; Docker Desktop project
+container execution on those hosts remains a local-machine validation gate.
 
 The compiled chibicc-derived binary is exposed separately as `cy16-chibicc`.
 The Python project compiler remains `cy16-cc`; the two names must not overwrite
@@ -76,11 +80,12 @@ pytest -q
 ```
 
 A full native compiler validation also requires a compatible C compiler and
-`make`, so the container path is preferred when moving between Windows and Linux
+`make`, so the container path is preferred when moving among development
 machines.
 
-macOS is an intended future source/container host, but it is not currently
-validated because no Mac is available for this project.
+A hosted Mac now validates the POSIX/Python project launcher. No separate macOS
+toolchain is planned; the remaining Mac-specific work is Docker Desktop/runtime
+and volume behavior on an actual development Mac.
 
 ## Package contents
 
@@ -95,7 +100,7 @@ validated because no Mac is available for this project.
 - `src/cy16boot/` — bootstrap Python tools.
 - `src/cy16cc/` — chibicc-derived compiler port and CY16 backend.
 - `libcy16/` — startup/runtime/linker-script seed files.
-- `scripts/dev.py` — portable Windows/Linux host wrapper.
+- `scripts/dev.py` — portable cross-platform host wrapper.
 - `scripts/vendor_chibicc.sh` — pins and vendors chibicc.
 - `tests/` — pytest tests.
 
