@@ -104,3 +104,38 @@ jobs:
           CY16_IMAGE=cy16-bootstrap:ci python3 scripts/dev.py tool cy16-as \
             examples/setup_stub.s -o build/dev-wrapper.bin --base 0x1000
           test -s build/dev-wrapper.bin
+
+  windows-launcher-surface:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Parse PowerShell wrappers
+        shell: powershell
+        run: |
+          foreach ($path in @('.\scripts\dev.ps1','.\scripts\bootstrap.ps1','.\scripts\run_docker.ps1')) {
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path),[ref]$null,[ref]$errors)
+            if ($errors.Count -ne 0) { $errors | Format-List | Out-String | Write-Error; exit 1 }
+          }
+
+      - name: Validate Python and PowerShell launcher help
+        shell: powershell
+        run: |
+          python -m py_compile .\scripts\dev.py
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate doctor diagnostic surface without requiring Docker Desktop
+        shell: powershell
+        run: |
+          $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1 doctor 2>&1
+          $code = $LASTEXITCODE
+          $text = ($output | ForEach-Object { "$_" }) -join "`n"
+          Write-Host $text
+          if ($code -notin @(0,2)) { throw "unexpected doctor exit code $code" }
+          if ($text -notmatch 'Repository:' -or $text -notmatch 'Host:') { throw 'doctor did not produce expected diagnostic surface' }
