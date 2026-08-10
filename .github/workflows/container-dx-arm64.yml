@@ -1,0 +1,78 @@
+name: CY16 Container and Portable DX ARM64
+
+on:
+  pull_request:
+    paths:
+      - '.dockerignore'
+      - 'Dockerfile'
+      - 'Makefile'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'include/**'
+      - 'libcy16/**'
+      - 'examples/**'
+      - 'tests/**'
+      - 'scripts/dev.py'
+      - 'scripts/dev.sh'
+      - '.github/workflows/container-dx-arm64.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-arm64-container-dx:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Confirm native ARM64 runner
+        run: |
+          test "$(uname -m)" = "aarch64"
+          docker version
+
+      - name: Validate launcher and isolated test image
+        run: |
+          python3 -m py_compile scripts/dev.py
+          sh -n scripts/dev.sh
+          test -x scripts/dev.sh
+          ./scripts/dev.sh doctor
+          docker build --target test -t cy16-bootstrap:arm64-test .
+
+      - name: Build minimal native ARM64 runtime
+        run: docker build --target runtime -t cy16-bootstrap:arm64 .
+
+      - name: Enforce native runtime shape
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          image = json.loads(subprocess.check_output(
+              ['docker', 'image', 'inspect', 'cy16-bootstrap:arm64'], text=True
+          ))[0]
+          assert image['Architecture'] == 'arm64', image['Architecture']
+          cfg = image['Config']
+          user = cfg.get('User') or ''
+          assert user not in {'', '0', 'root', '0:0'}, user
+          assert not cfg.get('Volumes'), cfg.get('Volumes')
+          size = int(image['Size'])
+          ceiling = 384 * 1024 * 1024
+          print(f'ARM64 runtime image size: {size} bytes ({size / 1024 / 1024:.1f} MiB)')
+          assert size <= ceiling, size
+          PY
+
+      - name: Native ARM64 runtime and wrapper smoke
+        run: |
+          docker run --rm --read-only --network none --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --entrypoint /bin/sh cy16-bootstrap:arm64 -c \
+            'command -v cy16-cc && command -v cy16-chibicc && command -v cy16-as && command -v cy16-sim'
+          mkdir -p build
+          CY16_IMAGE=cy16-bootstrap:arm64 python3 scripts/dev.py tool cy16-as \
+            examples/setup_stub.s -o build/dev-wrapper-arm64.bin --base 0x1000
+          test -s build/dev-wrapper-arm64.bin
