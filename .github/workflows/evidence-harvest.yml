@@ -1,0 +1,62 @@
+name: CY16 Evidence Harvest
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/evidence-harvest.yml'
+      - 'scripts/evidence_harvest.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-safe-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Harvest pinned redistributable corpora
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p harvest/public-safe
+
+          git clone --filter=blob:none --no-checkout https://github.com/asciilifeform/Stierlitz.git /tmp/Stierlitz
+          git -C /tmp/Stierlitz checkout --detach 783524ebb77b825a2ad6368bf7b3e60f23f7d738
+          test "$(git -C /tmp/Stierlitz rev-parse HEAD)" = 783524ebb77b825a2ad6368bf7b3e60f23f7d738
+          git -C /tmp/Stierlitz archive --format=tar --prefix=Stierlitz-783524e/ HEAD | gzip -n > harvest/public-safe/Stierlitz-783524e.tar.gz
+          cp /tmp/Stierlitz/build/stierlitz.lst harvest/public-safe/stierlitz.lst
+          cp /tmp/Stierlitz/build/stierlitz.bin harvest/public-safe/stierlitz.bin
+
+          git clone --filter=blob:none --no-checkout https://github.com/asciilifeform/ezotgdbg.git /tmp/ezotgdbg
+          git -C /tmp/ezotgdbg checkout --detach 250f2ff97e9e7117885e453f855fa15de000ba53
+          test "$(git -C /tmp/ezotgdbg rev-parse HEAD)" = 250f2ff97e9e7117885e453f855fa15de000ba53
+          git -C /tmp/ezotgdbg archive --format=tar --prefix=ezotgdbg-250f2ff/ HEAD | gzip -n > harvest/public-safe/ezotgdbg-250f2ff.tar.gz
+
+          (cd harvest/public-safe && sha256sum * | LC_ALL=C sort) > harvest/public-safe/SHA256SUMS
+          file harvest/public-safe/* > harvest/public-safe/FILE_TYPES.txt
+          wc -c harvest/public-safe/* > harvest/public-safe/BYTE_COUNTS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cy16-public-safe-harvest
+          path: harvest/public-safe
+          if-no-files-found: error
+          retention-days: 7
+
+  quarantine-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe historical vendor sources without publishing bytes
+        run: python scripts/evidence_harvest.py
+      - name: Assert no quarantined plaintext survives
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d harvest/quarantine-bytes || test -z "$(find harvest/quarantine-bytes -type f -print -quit)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cy16-quarantine-metadata
+          path: harvest/metadata
+          if-no-files-found: error
+          retention-days: 7
