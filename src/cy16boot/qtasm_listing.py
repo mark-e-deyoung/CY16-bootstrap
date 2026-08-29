@@ -25,7 +25,7 @@ class ListingRecord:
     listing_line: int
 
 
-_TOKEN_RE = re.compile(r"[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}")
+_TOKEN_RE = re.compile(r"(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})(?=[ \t]|$)")
 _PREFIX_RE = re.compile(
     r"^[ \t]{0,5}(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+(?P<rest>.*)$"
 )
@@ -49,7 +49,9 @@ def _parse_emitted_field(rest: str) -> tuple[bytes, str]:
     after only one space (for example a label such as ``@@:``). Therefore we parse
     tokens left-to-right and stop at the first non-token. A gap of two or more
     spaces also terminates emitted tokens; this prevents hexadecimal-looking source
-    mnemonics such as ``db`` from being consumed as output bytes.
+    mnemonics such as ``db`` from being consumed as output bytes. Token matching
+    also requires a whitespace/end boundary so source labels such as ``dbg_enable``
+    cannot be mistaken for the emitted byte ``db``.
     """
 
     pos = 0
