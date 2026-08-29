@@ -36,6 +36,17 @@ def test_real_corpus_allows_one_space_before_nonhex_source_label():
     assert records[0].source_text.startswith("@@: cmp")
 
 
+def test_source_label_starting_with_hex_characters_is_not_emitted_data():
+    listing = """
+  29 0504                dbg_enable:
+  30 0504 0017               push   r0
+"""
+    records = parse_listing(listing)
+    assert len(records) == 1
+    assert records[0].listing_line == 30
+    assert records[0].data == bytes.fromhex("17 00")
+
+
 def test_hexadecimal_looking_db_mnemonic_is_not_consumed_as_data():
     listing = "  43 04f4 00                 db     0\n"
     records = parse_listing(listing)
