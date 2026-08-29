@@ -1,7 +1,7 @@
 """Independent parser for historical Cypress QTASM listing files.
 
 This module intentionally does not import the CY16 assembler, decoder, ISA tables,
-or simulator.  It treats a QTASM listing as external evidence and reconstructs the
+or simulator. It treats a QTASM listing as external evidence and reconstructs the
 bytes QTASM reported emitting.
 """
 
@@ -25,23 +25,28 @@ class ListingRecord:
     listing_line: int
 
 
+_TOKEN = r"(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})"
+
 # QTASM 1.18x listing records look like:
 #   53 0500 cf9f 06a2          jmp    init_code
 #   43 04f4 00                 db     0
+#
+# Emitted tokens in the observed listing are separated by single spaces; the
+# source column is separated from the emitted-byte field by two or more spaces.
+# This distinction matters because mnemonics such as ``db`` consist entirely of
+# hexadecimal characters and must never be accepted as emitted bytes.
 # Symbol/equate records use an eight-digit value rather than a four-digit address,
-# so requiring exactly four address digits avoids treating them as emitted data.
+# so requiring exactly four address digits also keeps them out of the byte stream.
 _RECORD_RE = re.compile(
     r"^\s*(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+"
-    r"(?P<tokens>(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})"
-    r"(?:\s+(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}))*)"
+    rf"(?P<tokens>{_TOKEN}(?: {_TOKEN})*)"
     r"(?:\s{2,}(?P<source>.*))?$"
 )
 
 # Long DB/DW strings can wrap onto continuation lines containing only emitted
-# tokens.  We accept these only while a record is active.
+# tokens. We accept these only while a record is active.
 _CONT_RE = re.compile(
-    r"^\s{6,}(?P<tokens>(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})"
-    r"(?:\s+(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}))*)\s*$"
+    rf"^\s{{6,}}(?P<tokens>{_TOKEN}(?: {_TOKEN})*)\s*$"
 )
 
 
@@ -62,14 +67,14 @@ def parse_listing(text: str) -> list[ListingRecord]:
     """Parse emitted-byte records from a QTASM 1.18x-style listing.
 
     Non-emitting source/equate lines are ignored. Wrapped byte/word continuations
-    are appended to the preceding emitting source record. Address regressions or
-    conflicting overlaps are rejected by :func:`build_image`.
+    are appended to the preceding emitting source record. Contradictory overlaps
+    are rejected by :func:`byte_map` / :func:`build_image`.
     """
 
     records: list[ListingRecord] = []
     active_index: int | None = None
 
-    for physical_line, raw in enumerate(text.splitlines(), 1):
+    for raw in text.splitlines():
         match = _RECORD_RE.match(raw)
         if match:
             record = ListingRecord(
