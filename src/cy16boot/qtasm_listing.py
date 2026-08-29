@@ -31,14 +31,15 @@ _TOKEN = r"(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})"
 #   53 0500 cf9f 06a2          jmp    init_code
 #   43 04f4 00                 db     0
 #
-# Emitted tokens in the observed listing are separated by single spaces; the
-# source column is separated from the emitted-byte field by two or more spaces.
-# This distinction matters because mnemonics such as ``db`` consist entirely of
-# hexadecimal characters and must never be accepted as emitted bytes.
-# Symbol/equate records use an eight-digit value rather than a four-digit address,
-# so requiring exactly four address digits also keeps them out of the byte stream.
+# The observed source-line field starts near the left margin, while wrapped
+# emitted-data continuation lines are substantially indented. Limiting leading
+# indentation here is therefore part of the format grammar: without it a wrapped
+# word such as ``0065`` can be misread as source line 65 followed by address 0072.
+# Emitted tokens themselves use single spaces; source text is separated from the
+# emitted-byte field by two or more spaces. This also prevents mnemonics such as
+# ``db`` (valid hexadecimal characters) from being consumed as emitted bytes.
 _RECORD_RE = re.compile(
-    r"^\s*(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+"
+    r"^[ \t]{0,5}(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+"
     rf"(?P<tokens>{_TOKEN}(?: {_TOKEN})*)"
     r"(?:\s{2,}(?P<source>.*))?$"
 )
@@ -46,7 +47,7 @@ _RECORD_RE = re.compile(
 # Long DB/DW strings can wrap onto continuation lines containing only emitted
 # tokens. We accept these only while a record is active.
 _CONT_RE = re.compile(
-    rf"^\s{{6,}}(?P<tokens>{_TOKEN}(?: {_TOKEN})*)\s*$"
+    rf"^[ \t]{{6,}}(?P<tokens>{_TOKEN}(?: {_TOKEN})*)\s*$"
 )
 
 
