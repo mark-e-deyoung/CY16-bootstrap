@@ -1,0 +1,42 @@
+name: Public Evidence Harvest
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/public_evidence_harvest.py'
+      - 'evidence/public-harvest-plan.json'
+      - '.github/workflows/public-evidence-harvest.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Harvest public evidence
+        run: python scripts/public_evidence_harvest.py evidence/public-harvest-plan.json --out harvest-output
+
+      - name: Prove no restricted plaintext is retained
+        run: |
+          test -f harvest-output/harvest-report.json
+          test -f harvest-output/public-safe/stierlitz.bin
+          test -f harvest-output/public-safe/stierlitz.lst
+          test ! -f harvest-output/public-safe/67300.inc
+
+      - name: Upload public-safe corpus and metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-public-evidence-harvest
+          path: |
+            harvest-output/harvest-report.json
+            harvest-output/public-safe/
+          if-no-files-found: error
+          retention-days: 7
