@@ -27,6 +27,22 @@ def test_parses_qtasm_words_as_little_endian_bytes():
     assert records[3].data == bytes.fromhex("97 cf")
 
 
+def test_real_corpus_allows_one_space_before_nonhex_source_label():
+    listing = " 136 11ea 57e7 003f 1126 @@: cmp    w[actual_lba_lw], FAT16_BOOT_BLOCK_LBA_LW\n"
+    records = parse_listing(listing)
+    assert len(records) == 1
+    assert records[0].address == 0x11EA
+    assert records[0].data == bytes.fromhex("e7 57 3f 00 26 11")
+    assert records[0].source_text.startswith("@@: cmp")
+
+
+def test_hexadecimal_looking_db_mnemonic_is_not_consumed_as_data():
+    listing = "  43 04f4 00                 db     0\n"
+    records = parse_listing(listing)
+    assert records[0].data == b"\x00"
+    assert records[0].source_text.startswith("db")
+
+
 def test_ignores_equate_values_that_are_not_emitted_addresses():
     listing = """
   57           00000000  FILE_SIZE_LW equ 0x0000
@@ -50,7 +66,6 @@ def test_appends_wrapped_db_and_dw_continuations():
     records = parse_listing(listing)
 
     assert records[0].data == b"STIRLITZ   "
-    # QTASM prints semantic 16-bit words; image bytes are little endian.
     assert records[1].data == b"L\x00o\x00p\x00e\x00r\x00 \x00O\x00S\x00"
 
 
