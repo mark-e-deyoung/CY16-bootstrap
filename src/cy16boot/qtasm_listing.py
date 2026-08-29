@@ -25,63 +25,94 @@ class ListingRecord:
     listing_line: int
 
 
-_TOKEN = r"(?:[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4})"
-
-# QTASM 1.18x listing records look like:
-#   53 0500 cf9f 06a2          jmp    init_code
-#   43 04f4 00                 db     0
-#
-# The observed source-line field starts near the left margin, while wrapped
-# emitted-data continuation lines are substantially indented. Limiting leading
-# indentation here is therefore part of the format grammar: without it a wrapped
-# word such as ``0065`` can be misread as source line 65 followed by address 0072.
-# Emitted tokens themselves use single spaces; source text is separated from the
-# emitted-byte field by two or more spaces. This also prevents mnemonics such as
-# ``db`` (valid hexadecimal characters) from being consumed as emitted bytes.
-_RECORD_RE = re.compile(
-    r"^[ \t]{0,5}(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+"
-    rf"(?P<tokens>{_TOKEN}(?: {_TOKEN})*)"
-    r"(?:\s{2,}(?P<source>.*))?$"
+_TOKEN_RE = re.compile(r"[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}")
+_PREFIX_RE = re.compile(
+    r"^[ \t]{0,5}(?P<line>\d+)\s+(?P<addr>[0-9A-Fa-f]{4})\s+(?P<rest>.*)$"
 )
-
-# Long DB/DW strings can wrap onto continuation lines containing only emitted
-# tokens. We accept these only while a record is active.
-_CONT_RE = re.compile(
-    rf"^[ \t]{{6,}}(?P<tokens>{_TOKEN}(?: {_TOKEN})*)\s*$"
-)
+_CONT_RE = re.compile(r"^[ \t]{6,}(?P<rest>.*)$")
 
 
-def _tokens_to_bytes(tokens: str) -> bytes:
+def _token_bytes(token: str) -> bytes:
+    if len(token) == 2:
+        return bytes((int(token, 16),))
+    if len(token) == 4:
+        word = int(token, 16)
+        return bytes((word & 0xFF, word >> 8))
+    raise QTASMListingError(f"unsupported emitted token {token!r}")
+
+
+def _parse_emitted_field(rest: str) -> tuple[bytes, str]:
+    """Split QTASM emitted tokens from source text.
+
+    Real QTASM 1.18x listings use single spaces between emitted tokens. Source text
+    is usually padded into a later column, but some real records begin source text
+    after only one space (for example a label such as ``@@:``). Therefore we parse
+    tokens left-to-right and stop at the first non-token. A gap of two or more
+    spaces also terminates emitted tokens; this prevents hexadecimal-looking source
+    mnemonics such as ``db`` from being consumed as output bytes.
+    """
+
+    pos = 0
     out = bytearray()
-    for token in tokens.split():
-        if len(token) == 2:
-            out.append(int(token, 16))
-        elif len(token) == 4:
-            word = int(token, 16)
-            out.extend((word & 0xFF, word >> 8))
-        else:  # defensive; regex should make this unreachable
-            raise QTASMListingError(f"unsupported emitted token {token!r}")
-    return bytes(out)
+    saw_token = False
+    while pos < len(rest):
+        if saw_token:
+            ws = re.match(r"[ \t]+", rest[pos:])
+            if not ws:
+                break
+            gap = ws.group(0)
+            pos += len(gap)
+            if len(gap.expandtabs(8)) >= 2:
+                return bytes(out), rest[pos:].rstrip()
+        match = _TOKEN_RE.match(rest, pos)
+        if not match:
+            break
+        token = match.group(0)
+        out.extend(_token_bytes(token))
+        pos = match.end()
+        saw_token = True
+
+    if not saw_token:
+        raise QTASMListingError("emitting record contains no byte/word tokens")
+    return bytes(out), rest[pos:].lstrip().rstrip()
+
+
+def _parse_continuation(rest: str) -> bytes | None:
+    pos = 0
+    out = bytearray()
+    saw = False
+    while pos < len(rest):
+        ws = re.match(r"[ \t]*", rest[pos:])
+        pos += len(ws.group(0))
+        if pos >= len(rest):
+            break
+        match = _TOKEN_RE.match(rest, pos)
+        if not match:
+            return None
+        out.extend(_token_bytes(match.group(0)))
+        pos = match.end()
+        saw = True
+    return bytes(out) if saw else None
 
 
 def parse_listing(text: str) -> list[ListingRecord]:
-    """Parse emitted-byte records from a QTASM 1.18x-style listing.
-
-    Non-emitting source/equate lines are ignored. Wrapped byte/word continuations
-    are appended to the preceding emitting source record. Contradictory overlaps
-    are rejected by :func:`byte_map` / :func:`build_image`.
-    """
+    """Parse emitted-byte records from a QTASM 1.18x-style listing."""
 
     records: list[ListingRecord] = []
     active_index: int | None = None
 
     for raw in text.splitlines():
-        match = _RECORD_RE.match(raw)
+        match = _PREFIX_RE.match(raw)
         if match:
+            try:
+                data, source = _parse_emitted_field(match.group("rest"))
+            except QTASMListingError:
+                active_index = None
+                continue
             record = ListingRecord(
                 address=int(match.group("addr"), 16),
-                data=_tokens_to_bytes(match.group("tokens")),
-                source_text=(match.group("source") or "").rstrip(),
+                data=data,
+                source_text=source,
                 listing_line=int(match.group("line")),
             )
             records.append(record)
@@ -90,16 +121,17 @@ def parse_listing(text: str) -> list[ListingRecord]:
 
         continuation = _CONT_RE.match(raw)
         if continuation and active_index is not None:
-            previous = records[active_index]
-            records[active_index] = ListingRecord(
-                address=previous.address,
-                data=previous.data + _tokens_to_bytes(continuation.group("tokens")),
-                source_text=previous.source_text,
-                listing_line=previous.listing_line,
-            )
-            continue
+            data = _parse_continuation(continuation.group("rest"))
+            if data is not None:
+                previous = records[active_index]
+                records[active_index] = ListingRecord(
+                    address=previous.address,
+                    data=previous.data + data,
+                    source_text=previous.source_text,
+                    listing_line=previous.listing_line,
+                )
+                continue
 
-        # Any ordinary source/listing line terminates continuation eligibility.
         active_index = None
 
     return records
@@ -132,8 +164,8 @@ def build_image(
     """Reconstruct a contiguous image from listing evidence.
 
     ``end`` is exclusive. Missing addresses are filled explicitly (zero by
-    default), which permits QTASM ``dup`` reservations to be reconstructed while
-    keeping the policy visible to the caller.
+    default), which permits QTASM reservations to be reconstructed while keeping
+    the fill policy visible to the caller.
     """
 
     if not 0 <= fill <= 0xFF:
