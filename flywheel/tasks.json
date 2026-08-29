@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "authority": "github-live-state",
+  "executors": {
+    "webui": {
+      "capabilities": [
+        "github-read",
+        "github-write",
+        "semantic-reconciliation",
+        "public-research"
+      ]
+    },
+    "github-actions": {
+      "capabilities": [
+        "deterministic-build",
+        "deterministic-test",
+        "validation-evidence"
+      ]
+    },
+    "local-agent": {
+      "capabilities": [
+        "github-read",
+        "github-write",
+        "semantic-reconciliation",
+        "interactive-execution",
+        "local-filesystem",
+        "specialized-tool"
+      ]
+    },
+    "hil": {
+      "capabilities": [
+        "physical-hardware",
+        "device-measurement"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "issue-8-parent-integration",
+      "title": "Integrate PR 11 and PR 13 corrections into PR 2",
+      "priority": 10,
+      "refs": ["issue:8", "pr:2", "pr:11", "pr:13"],
+      "depends_on": [],
+      "prerequisites": [
+        {"key": "pr:2:state", "equals": "open"},
+        {"key": "pr:11:validation", "equals": "success"},
+        {"key": "pr:13:validation", "equals": "success"}
+      ],
+      "completion_evidence": [
+        {"key": "pr:2:contains-pr-11", "equals": true},
+        {"key": "pr:2:contains-pr-13", "equals": true},
+        {"key": "pr:2:validation", "equals": "success"}
+      ],
+      "required_capabilities": ["github-read", "github-write", "semantic-reconciliation"],
+      "required_validators": ["github-actions"],
+      "escalate_if": ["PRIVATE_INPUT", "SPECIALIZED_TOOL", "OWNER_SEMANTIC_DECISION"]
+    },
+    {
+      "id": "issue-8-control-flow-reconciliation",
+      "title": "Reconcile PR 4 control-flow work against the integrated PR 2 parent",
+      "priority": 20,
+      "refs": ["issue:8", "pr:4", "pr:2"],
+      "depends_on": ["issue-8-parent-integration"],
+      "prerequisites": [
+        {"key": "pr:4:state", "equals": "open"}
+      ],
+      "completion_evidence": [
+        {"key": "pr:4:reconciled-to-current-parent", "equals": true},
+        {"key": "pr:4:validation", "equals": "success"}
+      ],
+      "required_capabilities": ["github-read", "github-write", "semantic-reconciliation"],
+      "required_validators": ["github-actions"],
+      "escalate_if": ["OWNER_SEMANTIC_DECISION", "INTERACTIVE_EXECUTION"]
+    },
+    {
+      "id": "issue-8-scan-manifest-reconciliation",
+      "title": "Reconcile PR 15 metadata corrections into PR 6 manifest producer",
+      "priority": 30,
+      "refs": ["issue:8", "pr:6", "pr:15"],
+      "depends_on": ["issue-8-parent-integration"],
+      "prerequisites": [
+        {"key": "pr:6:state", "equals": "open"},
+        {"key": "pr:15:validation", "equals": "success"}
+      ],
+      "completion_evidence": [
+        {"key": "pr:6:contains-pr-15", "equals": true},
+        {"key": "pr:6:validation", "equals": "success"}
+      ],
+      "required_capabilities": ["github-read", "github-write", "semantic-reconciliation"],
+      "required_validators": ["github-actions"],
+      "escalate_if": ["OWNER_SEMANTIC_DECISION"]
+    },
+    {
+      "id": "issue-8-legacy-scanner-reconciliation",
+      "title": "Reconcile PR 17 containment corrections into PR 9 legacy scanner",
+      "priority": 40,
+      "refs": ["issue:8", "pr:9", "pr:17"],
+      "depends_on": ["issue-8-parent-integration"],
+      "prerequisites": [
+        {"key": "pr:9:state", "equals": "open"},
+        {"key": "pr:17:validation", "equals": "success"}
+      ],
+      "completion_evidence": [
+        {"key": "pr:9:contains-pr-17", "equals": true},
+        {"key": "pr:9:validation", "equals": "success"}
+      ],
+      "required_capabilities": ["github-read", "github-write", "semantic-reconciliation"],
+      "required_validators": ["github-actions"],
+      "escalate_if": ["PRIVATE_INPUT", "LOCAL_ONLY_EVIDENCE", "OWNER_SEMANTIC_DECISION"]
+    },
+    {
+      "id": "de2-scan-hil-validation",
+      "title": "Validate promoted SCAN behavior on DE2-115 hardware when software prerequisites are complete",
+      "priority": 100,
+      "refs": ["issue:8", "external:SemperSupra/DE2-115#48", "external:SemperSupra/DE2-115#51"],
+      "depends_on": ["issue-8-scan-manifest-reconciliation"],
+      "prerequisites": [
+        {"key": "de2:scan-hil-gate", "equals": "ready"}
+      ],
+      "completion_evidence": [
+        {"key": "de2:scan-hil-verdict", "equals": "pass"}
+      ],
+      "required_capabilities": ["physical-hardware", "device-measurement"],
+      "required_validators": [],
+      "escalate_if": ["PHYSICAL_HARDWARE"]
+    }
+  ]
+}
