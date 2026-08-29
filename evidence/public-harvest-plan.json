@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "id": "stierlitz-bin-783524e",
+      "filename": "stierlitz.bin",
+      "url": "https://raw.githubusercontent.com/asciilifeform/Stierlitz/783524ebb77b825a2ad6368bf7b3e60f23f7d738/build/stierlitz.bin",
+      "landing_page": "https://github.com/asciilifeform/Stierlitz",
+      "expected_size": 5634,
+      "classification": "public-redistributable"
+    },
+    {
+      "id": "stierlitz-listing-783524e",
+      "filename": "stierlitz.lst",
+      "url": "https://raw.githubusercontent.com/asciilifeform/Stierlitz/783524ebb77b825a2ad6368bf7b3e60f23f7d738/build/stierlitz.lst",
+      "landing_page": "https://github.com/asciilifeform/Stierlitz",
+      "expected_size": 189493,
+      "classification": "public-redistributable"
+    },
+    {
+      "id": "stierlitz-67300-inc-783524e",
+      "filename": "67300.inc",
+      "url": "https://raw.githubusercontent.com/asciilifeform/Stierlitz/783524ebb77b825a2ad6368bf7b3e60f23f7d738/cypress/67300.inc",
+      "landing_page": "https://github.com/asciilifeform/Stierlitz",
+      "expected_size": 144581,
+      "classification": "restricted-or-unknown"
+    }
+  ]
+}
