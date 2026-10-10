@@ -68,3 +68,26 @@ def test_static_local_zero_initialization():
     """
     value, _ = _execute(source, "_twice")
     assert value == 0x12
+
+def test_return_expression_addition_without_static():
+    source = """
+    uint16_t combine(void) {
+        uint16_t a = 8;
+        uint16_t b = 9;
+        return a * 16 + b;
+    }
+    """
+    value, _ = _execute(source, "_combine")
+    assert value == 137
+
+def test_two_function_calls_without_static():
+    source = """
+    uint16_t inc(uint16_t x) { return x + 1; }
+    uint16_t combine(void) {
+        uint16_t a = inc(7);
+        uint16_t b = inc(8);
+        return a + b;
+    }
+    """
+    value, _ = _execute(source, "_combine")
+    assert value == 17
