@@ -7,6 +7,7 @@ on:
       - 'scripts/evidence_harvest.py'
       - 'scripts/verify_historical_gnupro_outputs.py'
       - 'scripts/probe_terasic_cypress_cd.py'
+      - 'scripts/encrypt_terasic_cypress_cd.py'
   workflow_dispatch:
 
 permissions:
@@ -106,3 +107,33 @@ jobs:
           path: harvest/metadata/terasic-cypress-cd.json
           if-no-files-found: error
           retention-days: 7
+
+  terasic-encrypted-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned crypto transport dependency
+        run: python -m pip install --no-cache-dir cryptography==46.0.4
+      - name: Acquire and encrypt exact vendor ZIP to public-key recipient
+        run: python scripts/encrypt_terasic_cypress_cd.py
+      - name: Assert only ciphertext and metadata exist in archive staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
+          test -f harvest/encrypted/terasic-encrypted-transfer.json
+          ! find harvest/encrypted -type f -name '*.zip' | grep -q .
+      - name: Upload encrypted transport artifact only
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-transfer
+          path: |
+            harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
+            harvest/encrypted/terasic-encrypted-transfer.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
