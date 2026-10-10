@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/evidence-harvest.yml'
       - 'scripts/evidence_harvest.py'
+      - 'scripts/verify_historical_gnupro_outputs.py'
   workflow_dispatch:
 
 permissions:
@@ -58,5 +59,33 @@ jobs:
         with:
           name: cy16-quarantine-metadata
           path: harvest/metadata
+          if-no-files-found: error
+          retention-days: 7
+
+  cypress-gnupro-output-oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned historical Cypress source sparsely
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/cypress-linux"
+          mkdir -p "$upstream"
+          git -C "$upstream" init -q
+          git -C "$upstream" remote add origin https://github.com/HorseMa/uClinux-STM32.git
+          git -C "$upstream" sparse-checkout init --cone
+          git -C "$upstream" sparse-checkout set uClinux-dist/linux-2.4.x/drivers/usb/cy7c67300/usbd/dedev
+          git -C "$upstream" -c protocol.version=2 fetch --depth=1 --filter=blob:none origin e0f4cc5029de32e09b17c5c5195c1ff686cb70d7
+          git -C "$upstream" checkout --detach FETCH_HEAD
+          test "$(git -C "$upstream" rev-parse HEAD)" = e0f4cc5029de32e09b17c5c5195c1ff686cb70d7
+          python scripts/verify_historical_gnupro_outputs.py \
+            --source-root "$upstream/uClinux-dist/linux-2.4.x/drivers/usb/cy7c67300/usbd/dedev" \
+            --report harvest/metadata/cypress-gnupro-oracle.json
+      - name: Upload source identity and binary oracle metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-gnupro-source-output-oracle
+          path: harvest/metadata/cypress-gnupro-oracle.json
           if-no-files-found: error
           retention-days: 7
