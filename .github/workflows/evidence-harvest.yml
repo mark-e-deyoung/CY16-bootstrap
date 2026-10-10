@@ -6,6 +6,7 @@ on:
       - '.github/workflows/evidence-harvest.yml'
       - 'scripts/evidence_harvest.py'
       - 'scripts/verify_historical_gnupro_outputs.py'
+      - 'scripts/probe_terasic_cypress_cd.py'
   workflow_dispatch:
 
 permissions:
@@ -88,5 +89,20 @@ jobs:
         with:
           name: cy16-gnupro-source-output-oracle
           path: harvest/metadata/cypress-gnupro-oracle.json
+          if-no-files-found: error
+          retention-days: 7
+
+  terasic-cypress-cd-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire and inventory Terasic v3.0.6 Cypress USB CD (metadata only)
+        run: python scripts/probe_terasic_cypress_cd.py
+      - name: Upload bounded vendor metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-cypress-cd-metadata
+          path: harvest/metadata/terasic-cypress-cd.json
           if-no-files-found: error
           retention-days: 7
