@@ -533,7 +533,7 @@ void codegen(Obj *prog, FILE *out) {
       fprintf(output, "    ret\n");
       fprintf(output, "\n");
     } else {
-        if (!strncmp(fn->name, ".L", 2)) continue;
+        /* File-scope static and function-local static objects use .L labels.\n           They must be emitted even though their linkage is internal. */
 
         fprintf(output, ".global _%s\n", fn->name);
         fprintf(output, "_%s:\n", fn->name);
