@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/evidence-harvest.yml'
       - 'scripts/evidence_harvest.py'
+      - 'scripts/verify_historical_gnupro_outputs.py'
+      - 'scripts/probe_terasic_cypress_cd.py'
+      - 'scripts/encrypt_terasic_cypress_cd.py'
+      - 'scripts/chunk_encrypted_transfer.py'
   workflow_dispatch:
 
 permissions:
@@ -24,7 +28,8 @@ jobs:
           git clone --filter=blob:none --no-checkout https://github.com/asciilifeform/Stierlitz.git /tmp/Stierlitz
           git -C /tmp/Stierlitz checkout --detach 783524ebb77b825a2ad6368bf7b3e60f23f7d738
           test "$(git -C /tmp/Stierlitz rev-parse HEAD)" = 783524ebb77b825a2ad6368bf7b3e60f23f7d738
-          git -C /tmp/Stierlitz archive --format=tar --prefix=Stierlitz-783524e/ HEAD | gzip -n > harvest/public-safe/Stierlitz-783524e.tar.gz
+          git -C /tmp/Stierlitz archive --format=tar --prefix=Stierlitz-783524e/ HEAD . ':(exclude)cypress/67300.inc' | gzip -n > harvest/public-safe/Stierlitz-783524e.tar.gz
+          ! tar -tzf harvest/public-safe/Stierlitz-783524e.tar.gz | grep -F '/cypress/67300.inc'
           cp /tmp/Stierlitz/build/stierlitz.lst harvest/public-safe/stierlitz.lst
           cp /tmp/Stierlitz/build/stierlitz.bin harvest/public-safe/stierlitz.bin
 
@@ -60,3 +65,108 @@ jobs:
           path: harvest/metadata
           if-no-files-found: error
           retention-days: 7
+
+  cypress-gnupro-output-oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned historical Cypress source sparsely
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$RUNNER_TEMP/cypress-linux"
+          mkdir -p "$upstream"
+          git -C "$upstream" init -q
+          git -C "$upstream" remote add origin https://github.com/HorseMa/uClinux-STM32.git
+          git -C "$upstream" sparse-checkout init --cone
+          git -C "$upstream" sparse-checkout set uClinux-dist/linux-2.4.x/drivers/usb/cy7c67300/usbd/dedev
+          git -C "$upstream" -c protocol.version=2 fetch --depth=1 --filter=blob:none origin e0f4cc5029de32e09b17c5c5195c1ff686cb70d7
+          git -C "$upstream" checkout --detach FETCH_HEAD
+          test "$(git -C "$upstream" rev-parse HEAD)" = e0f4cc5029de32e09b17c5c5195c1ff686cb70d7
+          python scripts/verify_historical_gnupro_outputs.py \
+            --source-root "$upstream/uClinux-dist/linux-2.4.x/drivers/usb/cy7c67300/usbd/dedev" \
+            --report harvest/metadata/cypress-gnupro-oracle.json
+      - name: Upload source identity and binary oracle metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-gnupro-source-output-oracle
+          path: harvest/metadata/cypress-gnupro-oracle.json
+          if-no-files-found: error
+          retention-days: 7
+
+  terasic-cypress-cd-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire and inventory Terasic v3.0.6 Cypress USB CD (metadata only)
+        run: python scripts/probe_terasic_cypress_cd.py
+      - name: Upload bounded vendor metadata only
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-cypress-cd-metadata
+          path: harvest/metadata/terasic-cypress-cd.json
+          if-no-files-found: error
+          retention-days: 7
+
+  terasic-encrypted-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned crypto transport dependency
+        run: python -m pip install --no-cache-dir cryptography==46.0.4
+      - name: Acquire and encrypt exact vendor ZIP to public-key recipient
+        run: python scripts/encrypt_terasic_cypress_cd.py
+      - name: Split ciphertext into verified transport segments under 100MB
+        run: python scripts/chunk_encrypted_transfer.py
+      - name: Assert no vendor plaintext or unsplit transfer remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
+          test -f harvest/encrypted/terasic-encrypted-transfer.json
+          test -f harvest/encrypted/terasic-transfer-parts.json
+          test -f harvest/encrypted/part-00.bin
+          test -f harvest/encrypted/part-01.bin
+          test -f harvest/encrypted/part-02.bin
+          test -f harvest/encrypted/part-03.bin
+          ! find harvest/encrypted -type f -name '*.zip' | grep -q .
+      - name: Upload encrypted part 00 and reassembly metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-00
+          path: |
+            harvest/encrypted/part-00.bin
+            harvest/encrypted/terasic-encrypted-transfer.json
+            harvest/encrypted/terasic-transfer-parts.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-01
+          path: harvest/encrypted/part-01.bin
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-02
+          path: harvest/encrypted/part-02.bin
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-03
+          path: harvest/encrypted/part-03.bin
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
