@@ -8,6 +8,7 @@ on:
       - 'scripts/verify_historical_gnupro_outputs.py'
       - 'scripts/probe_terasic_cypress_cd.py'
       - 'scripts/encrypt_terasic_cypress_cd.py'
+      - 'scripts/chunk_encrypted_transfer.py'
   workflow_dispatch:
 
 permissions:
@@ -120,20 +121,52 @@ jobs:
         run: python -m pip install --no-cache-dir cryptography==46.0.4
       - name: Acquire and encrypt exact vendor ZIP to public-key recipient
         run: python scripts/encrypt_terasic_cypress_cd.py
-      - name: Assert only ciphertext and metadata exist in archive staging
+      - name: Split ciphertext into verified transport segments under 100MB
+        run: python scripts/chunk_encrypted_transfer.py
+      - name: Assert no vendor plaintext or unsplit transfer remains
         shell: bash
         run: |
           set -euo pipefail
-          test -f harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
+          test ! -f harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
           test -f harvest/encrypted/terasic-encrypted-transfer.json
+          test -f harvest/encrypted/terasic-transfer-parts.json
+          test -f harvest/encrypted/part-00.bin
+          test -f harvest/encrypted/part-01.bin
+          test -f harvest/encrypted/part-02.bin
+          test -f harvest/encrypted/part-03.bin
           ! find harvest/encrypted -type f -name '*.zip' | grep -q .
-      - name: Upload encrypted transport artifact only
+      - name: Upload encrypted part 00 and reassembly metadata
         uses: actions/upload-artifact@v4
         with:
-          name: cy16-terasic-encrypted-cd-transfer
+          name: cy16-terasic-encrypted-cd-part-00
           path: |
-            harvest/encrypted/terasic-de2-115-cypress-3.0.6.zip.enc
+            harvest/encrypted/part-00.bin
             harvest/encrypted/terasic-encrypted-transfer.json
+            harvest/encrypted/terasic-transfer-parts.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-01
+          path: harvest/encrypted/part-01.bin
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-02
+          path: harvest/encrypted/part-02.bin
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+      - name: Upload encrypted part 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: cy16-terasic-encrypted-cd-part-03
+          path: harvest/encrypted/part-03.bin
           compression-level: 0
           if-no-files-found: error
           retention-days: 3
