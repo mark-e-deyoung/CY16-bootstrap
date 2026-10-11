@@ -14,8 +14,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install headless Icarus Verilog
-        run: sudo apt-get update -qq && sudo apt-get install -y iverilog
+        run: sudo apt-get update -qq && sudo apt-get install -y iverilog verilator
       - name: Compile and run synthetic control
         run: |
           iverilog -g2012 -s tb -o /tmp/hpi-synthetic.vvp tests/hdl/hpi_synthetic_oracle.sv
           vvp -N /tmp/hpi-synthetic.vvp
+      - name: Independent Verilator synthetic control
+        run: |
+          verilator --version
+          verilator --binary --timing --assert -Wno-fatal --top-module tb --Mdir /tmp/hpi-verilator tests/hdl/hpi_synthetic_oracle.sv
+          /tmp/hpi-verilator/Vtb
