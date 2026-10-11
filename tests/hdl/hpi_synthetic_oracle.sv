@@ -8,7 +8,7 @@ module synthetic_turnaround #(parameter integer CYCLES=8, parameter integer EARL
    done<=0;
    if (!busy && start) begin busy<=1;remaining<=CYCLES;end
    else if (busy) begin
-    if ((EARLY_EXIT && !access) || remaining<=1) begin busy<=0;done<=1;end
+    if (((EARLY_EXIT != 0) && !access) || remaining<=1) begin busy<=0;done<=1;end
     else remaining<=remaining-1;
    end
   end
