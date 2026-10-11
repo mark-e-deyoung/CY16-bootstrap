@@ -1,0 +1,21 @@
+name: HPI Synthetic Timing Oracle
+on:
+  pull_request:
+    paths:
+      - 'tests/hdl/**'
+      - '.github/workflows/hpi-synthetic.yml'
+  workflow_dispatch:
+jobs:
+  synthetic-hpi:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install headless Icarus Verilog
+        run: sudo apt-get update -qq && sudo apt-get install -y iverilog
+      - name: Compile and run synthetic control
+        run: |
+          iverilog -g2012 -s tb -o /tmp/hpi-synthetic.vvp tests/hdl/hpi_synthetic_oracle.sv
+          vvp -N /tmp/hpi-synthetic.vvp
