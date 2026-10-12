@@ -9,29 +9,30 @@ module hpi_case #(
  parameter integer EXPECT_PULSE_VIOLATIONS=0
 )(output reg done=0);
  reg clk=0,cs_n=1,wr_n=1,rd_n=1;
- integer last_start=-1, wr_start=-1, rd_start=-1;
+ time last_start=0, wr_start=0, rd_start=0;
+ bit seen_start=0, seen_wr=0, seen_rd=0;
  integer cycle_violations=0,pulse_violations=0,starts=0,ends=0;
  always #10 clk=~clk; // 50 MHz synthetic host
  always @(negedge wr_n) begin
   if(cs_n || !rd_n) $fatal(1,"invalid synthetic write strobe");
-  if(last_start>=0 && ($time-last_start)<125) cycle_violations=cycle_violations+1;
-  last_start=$time;wr_start=$time;starts=starts+1;
+  if(seen_start && ($time-last_start)<125) cycle_violations=cycle_violations+1;
+  last_start=$time;seen_start=1;wr_start=$time;seen_wr=1;starts=starts+1;
  end
  always @(negedge rd_n) begin
   if(cs_n || !wr_n) $fatal(1,"invalid synthetic read strobe");
-  if(last_start>=0 && ($time-last_start)<125) cycle_violations=cycle_violations+1;
-  last_start=$time;rd_start=$time;starts=starts+1;
+  if(seen_start && ($time-last_start)<125) cycle_violations=cycle_violations+1;
+  last_start=$time;seen_start=1;rd_start=$time;seen_rd=1;starts=starts+1;
  end
  always @(posedge wr_n) begin
-  if(wr_start>=0) begin
+  if(seen_wr) begin
    if(($time-wr_start)<42) pulse_violations=pulse_violations+1;
-   wr_start=-1;ends=ends+1;
+   seen_wr=0;ends=ends+1;
   end
  end
  always @(posedge rd_n) begin
-  if(rd_start>=0) begin
+  if(seen_rd) begin
    if(($time-rd_start)<42) pulse_violations=pulse_violations+1;
-   rd_start=-1;ends=ends+1;
+   seen_rd=0;ends=ends+1;
   end
  end
  task automatic transaction(input bit write_dir);
