@@ -24,3 +24,12 @@ jobs:
           verilator --version
           verilator --binary --timing --assert -Wno-fatal --top-module tb --Mdir /tmp/hpi-verilator tests/hdl/hpi_synthetic_oracle.sv
           /tmp/hpi-verilator/Vtb
+
+      - name: Run source-backed synthetic cycle contract in Icarus
+        run: |
+          iverilog -g2012 -s tb_hpi_cycle_contract -o /tmp/hpi-cycle.vvp tests/hdl/hpi_cycle_contract_tb.sv
+          vvp -N /tmp/hpi-cycle.vvp
+      - name: Independently run cycle contract in Verilator
+        run: |
+          verilator --binary --timing --assert -Wno-fatal --top-module tb_hpi_cycle_contract --Mdir /tmp/hpi-cycle-verilator tests/hdl/hpi_cycle_contract_tb.sv
+          /tmp/hpi-cycle-verilator/Vtb_hpi_cycle_contract
