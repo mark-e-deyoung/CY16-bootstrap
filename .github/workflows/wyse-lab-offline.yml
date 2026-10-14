@@ -1,0 +1,22 @@
+name: Wyse lab offline qualification
+on:
+  pull_request:
+    paths:
+      - 'lab/wyse5070/**'
+      - '.github/workflows/wyse-lab-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-plan:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated planner tests (no USB, no secrets)
+        run: |
+          python3 -m pip install --user pytest
+          python3 -m pytest -q lab/wyse5070/test_plan.py
+          python3 lab/wyse5070/plan.py --root lab/wyse5070 > /tmp/wyse-plan.json
+          python3 -m json.tool /tmp/wyse-plan.json > /dev/null
