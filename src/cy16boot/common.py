@@ -68,6 +68,25 @@ def eval_expr(expr: str, symbols: dict[str, int] | None = None, current_addr: in
         raise Cy16Error("empty expression")
     if expr in symbols:
         return symbols[expr] & 0xFFFFFFFF
+    # Map assembler-local symbols containing dots to safe Python identifiers.
+    # Replace only complete tokens outside string literals; never use eval().
+    import io
+    import tokenize
+    import re
+    symbol_aliases = {}
+    rewritten = expr
+    for name in sorted(symbols, key=len, reverse=True):
+        if name == '.' or (name.isidentifier() and not name.startswith('__')):
+            continue
+        alias = f"__cy16_symbol_{len(symbol_aliases)}"
+        pattern = r'(?<![\\w.$])' + re.escape(name) + r'(?![\\w.$])'
+        candidate, count = re.subn(pattern, alias, rewritten)
+        if count:
+            symbol_aliases[alias] = symbols[name]
+            rewritten = candidate
+    if symbol_aliases:
+        symbols.update(symbol_aliases)
+        expr = rewritten
     # Accept common assembler hex suffix such as 1234h.
     tokens = []
     for tok in expr.replace('(', ' ( ').replace(')', ' ) ').replace(',', ' , ').split():
