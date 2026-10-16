@@ -119,7 +119,7 @@ module hpi_pad_hold_case #(
    $fatal(1,"synthetic registered pad OE hold control mismatch");
   done=1;
  end
- initial begin #1000; $fatal(1,"synthetic pad hold control timed out"); end
+ initial begin #1000; if(!done) $fatal(1,"synthetic pad hold control timed out"); end
 endmodule
 
 module tb_hpi_cycle_contract;
