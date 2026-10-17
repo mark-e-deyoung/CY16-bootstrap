@@ -122,8 +122,51 @@ module hpi_pad_hold_case #(
  initial begin #1000; if(!done) $fatal(1,"synthetic pad hold control timed out"); end
 endmodule
 
+// Public synthetic read-capture phase control. The pad becomes valid 5ns
+// after the read strobe; capturing at assertion samples stale data, while
+// a deliberately delayed sample captures the new word. This is NOT private RTL.
+module synthetic_pad_read_capture #(
+ parameter integer SAMPLE_DELAY_NS=0
+)(
+ input wire rd_n,
+ input wire [15:0] pad,
+ output reg [15:0] captured=0
+);
+ always @(negedge rd_n) begin
+  if(SAMPLE_DELAY_NS>0) #(SAMPLE_DELAY_NS);
+  captured=pad;
+ end
+endmodule
+
+module hpi_read_capture_case(output reg done=0);
+ reg rd_n=1;
+ reg [15:0] pad=16'h0000;
+ wire [15:0] early, delayed;
+ synthetic_pad_read_capture #(.SAMPLE_DELAY_NS(0)) capture_early
+   (.rd_n(rd_n),.pad(pad),.captured(early));
+ synthetic_pad_read_capture #(.SAMPLE_DELAY_NS(10)) capture_delayed
+   (.rd_n(rd_n),.pad(pad),.captured(delayed));
+ initial begin
+  #20; rd_n=0;
+  #5; pad=16'hBEEF;
+  #10;
+  if(early!==16'h0000 || delayed!==16'hBEEF)
+   $fatal(1,"synthetic read capture phase vector 1 mismatch");
+  rd_n=1; pad=16'h0000;
+  #20; rd_n=0;
+  #5; pad=16'hC0DE;
+  #10;
+  if(early!==16'h0000 || delayed!==16'hC0DE)
+   $fatal(1,"synthetic read capture phase vector 2 mismatch");
+  $display("PASS synthetic read capture phase: immediate=stale delayed=valid (2 vectors); private RTL NOT tested");
+  done=1;
+ end
+ initial begin #1000; if(!done) $fatal(1,"synthetic read capture watchdog"); end
+endmodule
+
 module tb_hpi_cycle_contract;
- wire d2,d3,d7,pad_zero,pad_held;
+ wire d2,d3,d7,pad_zero,pad_held,read_capture_done;
+ hpi_read_capture_case read_phase(read_capture_done);
  hpi_pad_hold_case #(.HOLD_CLOCKS(0),.EXPECT_HOLD_NS(0)) no_hold(pad_zero);
  hpi_pad_hold_case #(.HOLD_CLOCKS(1),.EXPECT_HOLD_NS(20)) one_cycle_hold(pad_held);
  hpi_case #(.ACCESS_CYCLES(2),.EXPECT_CYCLE_VIOLATIONS(5),
@@ -133,8 +176,8 @@ module tb_hpi_cycle_contract;
  hpi_case #(.ACCESS_CYCLES(7),.EXPECT_CYCLE_VIOLATIONS(0),
             .EXPECT_PULSE_VIOLATIONS(0)) meets_both(d7);
  initial begin
-  wait(d2 && d3 && d7 && pad_zero && pad_held);
-  $display("PASS source-backed synthetic HPI cycle, strobe, and pad OE hold controls; private RTL NOT tested");
+  wait(d2 && d3 && d7 && pad_zero && pad_held && read_capture_done);
+  $display("PASS source-backed synthetic HPI cycle, strobe, pad OE hold, and read-capture phase controls; private RTL NOT tested");
   $finish;
  end
  initial begin #10000; $fatal(1,"synthetic timing test timed out"); end
